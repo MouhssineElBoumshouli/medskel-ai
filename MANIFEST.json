@@ -1,0 +1,128 @@
+{
+  "created_utc": "2026-11-09",
+  "repo": "MouhssineElBoumshouli/medskel-ai",
+  "upstream_geometry": "https://github.com/MouhssineElBoumshouli/medskel",
+  "status": "PROPOSED_IN_GITHUB_PULL_REQUEST",
+  "files": [
+    {
+      "path": ".github/ISSUE_TEMPLATE/cnn-task.md",
+      "bytes": 311,
+      "sha256": "798cdc9936ba7f04ed9e8e1ca3977e1c00134c59fc760e45c4ecc48445147755"
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "bytes": 689,
+      "sha256": "c0469c85513f429e901a75e2dfd68d40df62e8f33c740ef99a169d1552279c51"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 571,
+      "sha256": "1039728c9312dabbb63957737900b726e657557c4535367bc16cc238db118d05"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 883,
+      "sha256": "cac1435630e519b5e1a96ddd16c06566c0b31a1776f17e4b8ed3b55ee22dfda1"
+    },
+    {
+      "path": "CLAUDE.md",
+      "bytes": 6114,
+      "sha256": "bab696fc2f3caa20ebcc3e634e82fd548253c768377264593bfebf64cb485af7"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4495,
+      "sha256": "d1b5f1fea70506856d4beee921889f707a568b6041dc72c45ed6b2c5dfb112fa"
+    },
+    {
+      "path": "docs/00_START_HERE.md",
+      "bytes": 3757,
+      "sha256": "4080b634eedef9a1ba1051a6d4165795f589212f3f9b0c850c8dfbf02ac68bf6"
+    },
+    {
+      "path": "docs/01_MASTER_CONTEXT.md",
+      "bytes": 11710,
+      "sha256": "1993b628cf7b2e8e36541536ef450c0d5ef7c06465dfc7a878a2a13b5c0e9a41"
+    },
+    {
+      "path": "docs/02_CURRENT_STATE.md",
+      "bytes": 8480,
+      "sha256": "5124acc3a88ed21d1bfe327ae5cc10d4c2bc49976fad1368623847554332f2a5"
+    },
+    {
+      "path": "docs/03_CNN_IMPLEMENTATION.md",
+      "bytes": 10153,
+      "sha256": "6958777c84087791b7725ad2bafffc09abdd95da5d35901b1e9dbd9cb4689606"
+    },
+    {
+      "path": "docs/04_DATA_AND_EVALUATION.md",
+      "bytes": 9158,
+      "sha256": "ef79f482f3945a1528c891646a5a889c2e9ef7006b8c84bc03dcab0015fb1bfc"
+    },
+    {
+      "path": "docs/05_MEASUREMENTS.md",
+      "bytes": 7346,
+      "sha256": "0cb2eca97beb01642c1ac3ed6c3387ab9e4e59373608092dd3250ce01ee32a4c"
+    },
+    {
+      "path": "docs/06_RESEARCH_AND_COMPETITION.md",
+      "bytes": 9255,
+      "sha256": "0c4cf5f334f0ef7614927645174c4dbdb18cfc4074492672427de8aa9d87f4c9"
+    },
+    {
+      "path": "docs/07_PRODUCT_AND_RISK.md",
+      "bytes": 6813,
+      "sha256": "460d079c74a47c1ab61792c25ee2a4f5608e8011efd5e6e20ef8740260c53268"
+    },
+    {
+      "path": "docs/08_UNIVERSITY_PRESENTATION.md",
+      "bytes": 7993,
+      "sha256": "78ad2ffef3377cf8e7ca63af2c0b42224725ea122d5f083c138fbe49d37f0d15"
+    },
+    {
+      "path": "docs/09_TASKS_AND_MILESTONES.md",
+      "bytes": 8792,
+      "sha256": "dab35e5010f55795a2e5706a11dfbcbd42e2efdf7502b1df8631ed8686c6668c"
+    },
+    {
+      "path": "docs/10_DECISIONS_AND_OPEN_QUESTIONS.md",
+      "bytes": 6761,
+      "sha256": "02f2e55e6776504d2f819767d93d736e4b085c0bf41ec65757fe92fe71b7ee3a"
+    },
+    {
+      "path": "docs/11_REPOSITORY_BOUNDARIES.md",
+      "bytes": 2663,
+      "sha256": "342bdb650f1244a636fd670051b0cc9b39500ddcceba1329b47e9c258d734c2b"
+    },
+    {
+      "path": "docs/source/02_PROJECT_CHARTER.md",
+      "bytes": 3690,
+      "sha256": "fd03515afa09a0656a27618e1ca51cfe6bcbf1318f341ee538e6a15faa656fd1"
+    },
+    {
+      "path": "docs/source/03_EXPERIMENT_PROTOCOL.md",
+      "bytes": 5035,
+      "sha256": "d01b91088fc0d612789c16b7516dcff80308790d84773ba2901cdd0486ffdd3f"
+    },
+    {
+      "path": "docs/source/04_RESEARCH_RESOURCES.md",
+      "bytes": 4299,
+      "sha256": "dd496dabd5ed88bd7264ecae7b44232eb4c6066de551c5b3b26641f7970aa97c"
+    },
+    {
+      "path": "docs/source/05_DECISION_LOG.md",
+      "bytes": 2357,
+      "sha256": "20d1eaa26d47147efc2dd7d6ef0528a73e36488ba15b6c74b6334d12aae8fc29"
+    },
+    {
+      "path": "notebooks/MedSkel_AI_Day1.ipynb",
+      "bytes": 278101,
+      "sha256": "74fe25ff01d80c9cb97f02c3779458f2a46da7ea4516c7f22d36f76ba86bd11f"
+    },
+    {
+      "path": "prompts/CLAUDE_START.md",
+      "bytes": 2966,
+      "sha256": "afd5adca660a1f495f6f8c49dedc3f5bab0ce74e83001787bd2b1aab35bfaa4e"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+# Python environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+*.egg-info/
+.env
+.env.*
+!.env.example
+
+# Image datasets and annotations: never publish
+/data/
+/datasets/
+/raw_data/
+/data_local/
+/fives/
+/CHASEDB1/
+*.zip
+*.7z
+*.rar
+
+# Model weights, generated run output and potentially sensitive artifacts
+/checkpoints/
+/runs/
+/outputs/
+/artifacts/
+/predictions/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.h5
+*.npz
+
+# Editor and system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary logs
+*.log

@@ -43,3 +43,12 @@ Running when the session stopped: baseline validation eval without and with flip
 BLOCKED: CHASE_DB1 download (Kingston site has a bot check). Owner must download CHASEDB1.zip by hand and unzip into C:\data\CHASEDB1\images.
 Not started: worst-case figures (python scripts/worst_cases.py train/174_D test/122_G test/123_G), E2 (train --minutes 150 --out runs/e2_long), E3 (train --minutes 50 --cldice-weight 0.5 --out runs/e3_cldice), E4, pretrained baseline (needs pip install torchvision for cu126 + segmentation-models-pytorch), CHASE eval, final test, report/explanation update, PR, demo redesign, HF Space.
 Nothing in v2 has touched the FIVES test set yet.
+
+### v2 status update (same day, later)
+
+- [x] Step 1 baseline weakness (validation, 88 images): Dice 0.8985, clDice 0.9048, thin-vessel recall 0.459 (thick 0.895). Thin pixels = 1.7% of vessel pixels.
+- [x] E1 flips (validation): threshold 0.35, Dice 0.9017, clDice 0.9091, thin recall 0.480 -> helps, keep.
+- [x] Step 6 worst images looked at: train/174_D = expert mask does not match the photo (label error, model looks right); test/122_G and test/123_G = very dark, blurred photos, expert drew only a few vessels, model found almost none.
+- [ ] Chain 1 running in background: scripts/run_chain1.ps1 = E3 (runs/e3_cldice, 50 min, clDice weight 0.5) then E2 (runs/e2_long, 150 min), each with val eval (plain + flips). Read the RESULT lines at the tail of each eval log.
+- [ ] Then decide E4, train pretrained baseline (`--arch resnet34`, deps installed), CHASE (still needs manual download), final test, report, PR, Space.
+- app.py already redesigned (Gradio Blocks); ABOUT.md still a placeholder.

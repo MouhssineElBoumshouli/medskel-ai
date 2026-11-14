@@ -14,6 +14,10 @@
    },
    "image_mask_size_mismatch": [],
    "masks_with_values_other_than_0_255": [],
+   "completely_black_masks": [
+    "train/447_G",
+    "train/448_G"
+   ],
    "vessel_pixel_fraction_mean": 0.07457076986630758,
    "vessel_pixel_fraction_min": 0.0,
    "vessel_pixel_fraction_max": 0.10915946960449219,
@@ -36,7 +40,8 @@
     "(2048, 2048)": 200
    },
    "image_mask_size_mismatch": [],
-   "masks_with_values_other_than_0_255": []
+   "masks_with_values_other_than_0_255": [],
+   "completely_black_masks": []
   }
  },
  "identical_image_files": [

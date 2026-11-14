@@ -206,12 +206,84 @@ Vessels are a small minority of the pixels. Imagine a lazy model that paints **e
 
 ## 10. Our real results
 
-RESULTS_PLACEHOLDER
+All numbers below come from one real run on this laptop (RTX 3050, 4 GB) on 14 November 2026. The raw files are in `results/`.
+
+**Data.** FIVES has 600 official training images and 200 official test images, each 2048 x 2048. We removed 2 training images whose masks were completely black (label errors). From the rest we took 88 images for validation (22 per disease group) and trained on 510. In the training masks, vessels are only **7.5%** of the pixels.
+
+**Training.** 38 epochs in 51 minutes. Each step used 4 random 512 x 512 crops. The training loss fell from 1.00 to 0.16. The validation loss fell from 0.83 to 0.21. The best epoch was number 32 (validation Dice 0.878 on fixed crops). We kept the weights of that epoch.
+
+**Threshold.** On the 88 whole validation images we tried thresholds from 0.10 to 0.90. The best mean Dice was at **0.40** (Dice 0.899). We fixed 0.40 **before** opening the test set.
+
+**Test.** We evaluated the 200 official test images **one time**:
+
+| Metric | Mean over 200 images | Spread (std) |
+|---|---|---|
+| Dice | **0.875** | 0.114 |
+| IoU | 0.791 | 0.136 |
+| Precision | 0.909 | 0.063 |
+| Recall | 0.856 | 0.144 |
+| Specificity | 0.993 | 0.005 |
+| Accuracy | 0.986 | 0.006 |
+
+The median Dice is 0.907. So the typical image is better than the mean. A few very bad images pull the mean down.
+
+Per disease group (50 test images each):
+
+| Group | Dice | Precision | Recall |
+|---|---|---|---|
+| A (AMD) | 0.908 | 0.925 | 0.898 |
+| D (diabetic retinopathy) | 0.876 | 0.925 | 0.840 |
+| G (glaucoma) | 0.828 | 0.901 | 0.794 |
+| N (normal) | 0.887 | 0.886 | 0.892 |
+
+What to notice:
+
+- **Precision (0.91) is higher than recall (0.86).** When the model marks a vessel it is usually right. But it misses about 14% of the vessel pixels. These are most likely the thin, faint ones (we did not measure thin vessels separately).
+- **Glaucoma is the weakest group**, with the largest spread. The two worst images are `122_G` (Dice 0.03) and `123_G` (Dice 0.11). There the expert marked very few vessels (0.7% and 1.7% of the pixels) and the model found almost nothing. 10 of the 200 images have Dice below 0.7.
+- **The accuracy trap, with our real numbers.** A model that paints everything black gets **92.9%** accuracy on the test set, with Dice 0 and recall 0. Our model gets 98.6%. Both numbers look high. Only Dice (0 against 0.875) shows the real difference.
 
 ## 11. Limits — say these out loud
 
-LIMITS_PLACEHOLDER
+1. **Patients may overlap.** FIVES has 800 images from 573 patients, and no patient ids are published. So images of the same person can be in training and in validation, or in training and in test. Our scores may be a little optimistic. We cannot claim "tested on new patients".
+2. **Duplicate photos exist.** We found 6 cases where the same photo is stored under two names (5 in train, 1 in test, none shared between train and test). We keep such copies in the same part of the split.
+3. **One run, one seed.** We did not repeat the training. We do not know how much the result changes with another seed.
+4. **One dataset, one camera type.** We did not test on images from another hospital or camera. Results there will probably be worse.
+5. **The expert masks are not perfect truth.** Two masks were empty. Some may be misaligned. Experts also disagree with each other.
+6. **No field-of-view mask.** The black corners around the retina count as easy background pixels. This pushes accuracy and specificity up. It does not change Dice much.
+7. **The validation score during training used crops from the image centre**, not whole images. It was only used to pick the best epoch.
+8. **Pixels only.** The model gives a mask. It does not measure vessel width or length. It does not diagnose anything. It is not a medical device.
 
 ## 12. Ten likely professor questions
 
-QA_PLACEHOLDER
+**1. Why a U-Net and not a normal classification CNN?**
+A classification CNN gives one answer for the whole image. We need one answer per pixel, at the same size as the input. The U-Net has a decoder that brings the picture back to full size, and skip connections that bring back sharp detail.
+
+**2. What do the skip connections do? What happens without them?**
+They copy encoder feature maps to the decoder and concatenate them. Without them, the decoder only has the small 32 x 32 map (for a 512 crop). All fine position information was lost by four poolings. Thin vessels would come out blurry or disappear.
+
+**3. Why do you train on 512 x 512 crops and not on the whole image, or on a resized image?**
+A whole 2048 x 2048 image does not fit in 4 GB of GPU memory during training. Resizing to a small image would erase vessels that are 1–2 pixels wide. Crops keep the full resolution and fit in memory. Random crops also give variety: every epoch sees new windows.
+
+**4. How do you predict a whole image then?**
+We cut it into 512 x 512 tiles that overlap by 64 pixels. We predict each tile. We average the probabilities where tiles overlap. This works because convolutions do the same thing at every position.
+
+**5. Why BCE plus Dice? Why not only one?**
+Only 7.5% of the pixels are vessels. BCE treats all pixels equally, so background dominates. Dice measures overlap of the vessel class and ignores true negatives. BCE gives smooth gradients for every pixel. The sum is a common, stable choice. We did not run a comparison of the two, so we cannot claim it is better on our data.
+
+**6. Why is the output a logit and not a probability?**
+`BCEWithLogitsLoss` combines sigmoid and logarithm in one stable formula. If we computed sigmoid first and then `log`, a probability very close to 0 would give `log(0)` = minus infinity. For prediction we apply sigmoid ourselves.
+
+**7. Why is accuracy a bad metric here?**
+Classes are very unbalanced. An all-black prediction gets 92.9% accuracy on our test set with zero vessels found. Dice, IoU, precision and recall look at the vessel class and expose this.
+
+**8. How did you choose the threshold 0.40? Is that cheating?**
+We chose it on the 88 validation images, by trying 17 values and taking the best mean Dice. The test images were not used. The curve is flat: any value from 0.30 to 0.45 gives Dice within 0.001. Choosing it on the test set would be cheating, because the test score would then be tuned to the test data.
+
+**9. Is the model overfitting? How do you know?**
+At the end the training loss is 0.16 and the validation loss is 0.21. The gap is small, and the validation loss did not rise again. So there is no strong overfitting. Things that help: random crops, flips, rotations, brightness changes, and keeping the best epoch by validation Dice. The test Dice (0.875) is lower than the validation Dice (0.899), which is a normal small drop.
+
+**10. How many parameters, and where are most of them?**
+7,849,601. A 3 x 3 convolution has `9 × input channels × output channels` weights. So the layers with many channels are the big ones: the bottleneck (256→512→512) alone has about 3.5 million, and the first decoder block about 2.4 million. The first layer has only 864 weights.
+
+**Bonus: what would you do next?**
+Train several seeds to get error bars. Test on another dataset (CHASE_DB1). Measure thin vessels separately. Look by eye at the worst images to see whether the model or the label is wrong.

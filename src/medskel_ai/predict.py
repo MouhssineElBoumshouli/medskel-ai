@@ -69,7 +69,7 @@ def predict_probability(
     return: float32 [H, W], values 0..1
     """
     height, width = image.shape[:2]
-    x = torch.from_numpy(np.ascontiguousarray(image)).permute(2, 0, 1).float() / 255.0  # [3, H, W]
+    x = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0  # [3, H, W]
     # If the image is smaller than one tile, pad it with black on the right/bottom.
     pad_h, pad_w = max(tile - height, 0), max(tile - width, 0)
     if pad_h or pad_w:

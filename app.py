@@ -31,7 +31,7 @@ VESSEL_COLOR = (0, 255, 120)
 
 def find_model_dir() -> Path:
     """1) MEDSKEL_MODEL_DIR if set, 2) ./model (Hugging Face Space), 3) the final local training run."""
-    candidates = [os.environ.get("MEDSKEL_MODEL_DIR"), HERE / "model", HERE / "runs" / "final", HERE / "runs" / "unet_fives"]
+    candidates = [os.environ.get("MEDSKEL_MODEL_DIR"), HERE / "model", HERE / "runs" / "e2_long", HERE / "runs" / "unet_fives"]
     for candidate in candidates:
         if candidate and (Path(candidate) / "best.pt").exists():
             return Path(candidate)

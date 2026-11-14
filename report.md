@@ -1,184 +1,234 @@
-# Retinal vessel segmentation with a small U-Net on the FIVES dataset
+# Retinal vessel segmentation with a small U-Net: training, validation and external testing
 
-**Author:** Mouhssine El Boumshouli — CNN class project — 14 November 2026
+**Author:** Mouhssine El Boumshouli — CNN class project — version 2, November 2026
 
-**Code:** `MouhssineElBoumshouli/medskel-ai`, branch `feature/unet-fives`
+**Code:** `MouhssineElBoumshouli/medskel-ai`. Version 1 = pull request #4 (baseline). Version 2 = branch `feature/v2-validation`.
 
 ---
 
 ## Abstract
 
-We train a plain U-Net (7.85 million parameters) to mark blood vessels in colour photographs of the retina. We use the public FIVES dataset: 800 photographs of 2048 x 2048 pixels with expert vessel masks. We keep the full resolution by training on random 512 x 512 crops and by predicting whole images tile by tile. Training took 51 minutes on a laptop GPU with 4 GB of memory. The decision threshold was chosen on validation images only. On the 200 official test images, evaluated once, the model reaches a mean Dice of **0.875** (median 0.907), precision 0.909 and recall 0.856. The model works well on most images and fails on a few, mostly in the glaucoma group. The result is a class demonstration. It is not a clinical tool, and patient overlap between the dataset parts cannot be ruled out.
+We train a plain U-Net (7.85 million parameters, no pretrained weights) to mark blood vessels in colour photographs of the retina, using the public FIVES dataset (800 photographs, 2048 x 2048 pixels, expert masks). Version 1 of this project reached a mean Dice of 0.875 on the 200 official test images. Version 2 asks two questions: can we improve it, and how far can we trust it?
+
+We first measured the known weakness with two new metrics. On validation images the baseline finds 89% of thick-vessel pixels but only **46% of thin-vessel pixels**. We then tested changes one at a time on validation data only. Training three times longer and averaging predictions over mirrored copies of the image both helped. Adding a clDice term to the loss did not help and was dropped. The final model reaches a mean Dice of **0.889** (95% interval 0.873 to 0.903) on the FIVES test set, clDice 0.897 and thin-vessel recall 0.458. PRETRAINED_ABSTRACT
+
+On an external dataset from another camera and population (CHASE_DB1, 28 images of 14 children, never used for training or tuning), the final model reaches Dice 0.766 against the first human observer. The second human observer reaches 0.777 against the first. The difference is not statistically clear, but the model and the human make different kinds of errors: the model marks more pixels as vessel.
+
+The FIVES test set has now been used twice (once per version). The model is a research prototype, not a medical device.
 
 ## 1. Introduction
 
-Blood vessels of the retina can be photographed directly. Their shape is studied in research on eye disease and on general vascular health. Before anyone can measure a vessel, a program must decide which pixels belong to vessels. This is a **binary segmentation** task: one yes/no answer per pixel.
+Blood vessels of the retina can be photographed directly. Before anyone can measure a vessel, a program must decide which pixels belong to vessels. This is **binary segmentation**: one yes/no answer per pixel. Vessels are thin, low in contrast, and rare (7.5% of the pixels in our training masks).
 
-The task is hard for simple methods. Vessels are thin, sometimes only one or two pixels wide. They have low contrast. And they are rare: in our training masks only 7.5% of the pixels are vessel.
-
-The goal of this project is educational: build the smallest U-Net that is still a real model, train it on real expert labels, evaluate it honestly, and understand every step. The mathematics is explained in `docs/explanation.md`.
+The project has two goals. The educational goal: build the smallest U-Net that is still a real model and understand every step (see `docs/explanation.md`). The engineering goal of version 2: improve the model with controlled experiments, and measure honestly where it works and where it does not, including on data from elsewhere.
 
 ## 2. Data
 
-**FIVES** (Jin et al., 2022) contains 800 colour fundus photographs with pixel-level vessel masks drawn by experts. There are four groups of 200 images: AMD (A), diabetic retinopathy (D), glaucoma (G) and normal (N). The authors define a split of 600 training and 200 test images. The group letter is part of each file name.
+### 2.1 FIVES (training, validation, test)
 
-We checked every file of our local copy with a script (`python -m medskel_ai.data`, result in `results/data_audit.json`):
+FIVES (Jin et al., 2022) contains 800 colour fundus photographs with pixel-level vessel masks: 200 each for AMD (A), diabetic retinopathy (D), glaucoma (G) and normal (N). The paper describes a tabletop TRC-NW8 camera with a 50° field of view and images of 2048 x 2048 pixels from 573 patients. The authors define 600 training and 200 test images.
+
+Our audit of the local copy (`python -m medskel_ai.data`, `results/data_audit.json`):
 
 | Check | Result |
 |---|---|
-| Image/mask pairs with identical names | 600 train, 200 test |
-| Images per group | 150 per group in train, 50 per group in test |
+| Image/mask pairs with identical names | 600 train, 200 test; 150 / 50 per group |
 | Image size | all 2048 x 2048, masks the same size |
 | Mask values | only 0 and 255 in all 800 masks |
-| Vessel share of pixels (train) | mean 7.5%; A 7.3%, D 6.9%, G 6.7%, N 9.0% |
+| Vessel share of pixels (train) | mean 7.5% (A 7.3%, D 6.9%, G 6.7%, N 9.0%) |
 | Completely black masks | 2 in train (`447_G`, `448_G`), 0 in test |
 | Byte-identical photographs | 6 pairs: 5 inside train, 1 inside test, 0 between train and test |
 
-Two findings changed our plan:
+The two empty masks are label errors and are excluded. Identical photographs are kept in the same part of the split. From the 598 usable training images, 88 form the validation set (22 per group, seed 42) and 510 are used for training (`results/split_seed42.json`). The same split is used in every experiment.
 
-- The two **empty masks** are label errors. We excluded these two images from training and validation.
-- The **identical photographs** are the same file stored under two names. Their masks are not identical, so the same photo was annotated twice. In our first split, one such pair was divided between training and validation. This would leak information. We changed the split so that copies always stay in the same part. A unit test covers this.
+**Limit.** The 800 images come from 573 patients and no patient identifiers are published. Different photographs of one patient can be in different parts. Scores on FIVES are scores on unseen *images*, not proven scores on unseen *patients*.
 
-**Split.** The official test set is kept as it is. From the 598 remaining training images we took 88 for validation (22 per group, random with seed 42) and kept 510 for training. The list is in `results/split_seed42.json`.
+### 2.2 CHASE_DB1 (external test only)
 
-**Important limit.** The FIVES paper states that the 800 images come from 573 patients. The public data contains no patient identifiers. Different photographs of the same patient can therefore be in different parts of our split and of the official split. We cannot check this and cannot fix it. Our scores are scores on *unseen images*, not proven scores on *unseen patients*.
+CHASE_DB1 (Kingston University; Fraz et al., 2012) contains 28 photographs: both eyes of 14 children, taken with a hand-held Nidek NM-200-D camera at a 30° field of view. Our copy has images of 999 x 960 pixels. Every image has **two** vessel masks drawn independently by two human observers. Licence: CC BY 4.0. We checked: 28 images, 56 masks, masks binary, sizes equal.
+
+No CHASE image was used for training, for choosing a model, or for choosing a threshold.
 
 ## 3. Method
 
-### 3.1 Preprocessing
+### 3.1 Model
 
-Images are read as RGB and divided by 255, so values are between 0 and 1. Masks are converted to exactly 0 and 1. Nothing is resized. If a mask ever has to be resized (only for display), nearest-neighbour interpolation is used so that labels stay 0/1.
+A standard U-Net (Ronneberger et al., 2015) in plain PyTorch (`src/medskel_ai/model.py`). Encoder: four blocks with 32, 64, 128, 256 channels, each two 3 x 3 convolutions with batch normalisation and ReLU, followed by 2 x 2 max pooling. Bottleneck: 512 channels. Decoder: four steps of bilinear upsampling, concatenation with the encoder feature map of the same size (skip connection), and a block. A 1 x 1 convolution gives one logit per pixel. **7,849,601** trainable parameters. No pretrained weights.
 
-For training we cut two random 512 x 512 crops from each photograph. Each crop is randomly flipped and rotated by a multiple of 90 degrees, with the image and the mask transformed identically. Brightness and contrast are changed slightly on the image only. Validation during training uses four fixed crops around the image centre, with no randomness.
+### 3.2 Training
 
-### 3.2 Model
+Images are not resized. Each step uses 4 random 512 x 512 crops (2 photographs x 2 crops) with random flips, 90° rotations and small brightness/contrast changes. Loss: binary cross-entropy on logits plus soft Dice loss, equal weights. Adam, learning rate 0.001 lowered to 0 along a cosine curve over a fixed time budget. Mixed precision. Seed 42. Hardware: NVIDIA RTX 3050 Laptop GPU, 4 GB. After each epoch, Dice on fixed validation crops selects the best weights.
 
-The model is a standard U-Net (Ronneberger et al., 2015) written in plain PyTorch (`src/medskel_ai/model.py`).
+### 3.3 Prediction
 
-- **Encoder:** four blocks with 32, 64, 128 and 256 channels. Each block is two 3 x 3 convolutions, each followed by batch normalisation and ReLU. After each block, 2 x 2 max pooling halves the size.
-- **Bottleneck:** one block with 512 channels at 1/16 of the input size.
-- **Decoder:** four steps. Each step upsamples by 2 (bilinear), concatenates the encoder feature map of the same size (skip connection), and applies a block.
-- **Head:** a 1 x 1 convolution that gives one logit per pixel.
+A whole image is cut into 512 x 512 tiles overlapping by 64 pixels; tile probabilities are averaged where they overlap. **Flips** (test-time augmentation): the image is predicted four times (original, mirrored left-right, mirrored up-down, both), each result is mirrored back, and the four probability maps are averaged.
 
-For a 512 x 512 crop the tensor goes from `[3, 512, 512]` down to `[512, 32, 32]` and back to `[1, 512, 512]`. The model has **7,849,601** trainable parameters. No pretrained weights are used.
+### 3.4 Metrics
 
-### 3.3 Loss and optimisation
+Per image, then averaged over images:
 
-The loss is the sum of two terms with equal weight:
+- **Dice, IoU, precision, recall (sensitivity), specificity, accuracy** from the pixel counts TP, FP, FN, TN.
+- **clDice** (Shit et al., 2021) measures connectivity. Both masks are reduced to their skeleton (1-pixel centre lines, `skimage.morphology.skeletonize`). Tprec = share of the predicted skeleton inside the expert mask. Tsens = share of the expert skeleton inside the predicted mask. clDice = 2·Tprec·Tsens / (Tprec + Tsens). On skeletons, a thin vessel counts as much per unit length as a thick one, and a broken vessel lowers Tsens.
+- **Thin-vessel recall.** Definition fixed before looking at results: take the skeleton of the expert mask; the distance transform gives at each skeleton pixel the distance d to the background; local width ≈ 2d − 1; every expert vessel pixel gets the width of its nearest skeleton pixel; a pixel is *thin* if that width is ≤ 3 px. Because the formula rounds even widths down, "thin" covers vessels 1 to 4 pixels wide. Thin-vessel recall is the share of thin expert pixels that the model found. On FIVES, thin pixels are only about 1.7% of all vessel pixels.
 
-- **Binary cross-entropy** on the logits (`BCEWithLogitsLoss`), averaged over pixels.
-- **Soft Dice loss**: `1 − (2·Σ p·y + 1) / (Σ p + Σ y + 1)`, where `p` is the predicted probability and `y` the label.
+**Error bars.** For every mean we give a 95% bootstrap interval: we redraw the images with replacement 10,000 times and take the middle 95% of the resulting means. For CHASE we redraw *children*, not images, because the two eyes of a child are not independent. For comparisons between two models on the same images we bootstrap the per-image *difference*.
 
-BCE gives a stable gradient for every pixel. Dice focuses on the overlap of the rare vessel class. We did not compare this choice with BCE alone.
+All FIVES metrics use every pixel of the image. CHASE metrics use the pixels inside the field of view (section 4.6).
 
-| Setting | Value |
-|---|---|
-| Optimiser | Adam, learning rate 0.001, lowered to 0 with a cosine curve |
-| Batch | 4 crops (2 photographs x 2 crops) |
-| Mixed precision | yes (16-bit where safe) |
-| Time budget | 50 minutes |
-| Seed | 42 |
-| Hardware | NVIDIA RTX 3050 Laptop GPU, 4 GB; peak GPU memory used by PyTorch 2.0 GB |
-| Software | Python 3.11.9, PyTorch 2.14.1 (CUDA 12.6 build) |
+### 3.5 Protocol
 
-After every epoch we compute the Dice score on the fixed validation crops (threshold 0.5) and save the weights if it is the best so far.
-
-### 3.4 Prediction on whole images
-
-A whole image is cut into 512 x 512 tiles with an overlap of 64 pixels (25 tiles for a FIVES image). Each tile is predicted. Probabilities are averaged where tiles overlap. A pixel is called vessel if its probability is at least the threshold.
-
-### 3.5 Evaluation protocol
-
-1. Train, and choose the best epoch with validation crops.
-2. Predict the 88 **whole** validation images. Try thresholds 0.10, 0.15, …, 0.90. Keep the one with the best mean Dice.
-3. Only then predict the 200 official test images, **once**, with that threshold. The script refuses a second run.
-
-Metrics are computed **per image** and then averaged, so each image counts equally. All pixels of the image are used (no field-of-view mask). Dice, IoU, precision, recall, specificity and accuracy are defined in `docs/explanation.md`, section 9.
+1. Every decision (which change to keep, which threshold) is made on the 88 validation images.
+2. One change at a time, same seed, same data split.
+3. The FIVES test set is evaluated once for the final model. **The test set was already used once for version 1, so it has now been used twice.** The version 1 result is kept below unchanged. We did not re-evaluate the version 1 model on the test set with the new metrics.
+4. CHASE_DB1 is evaluated with the model and threshold fixed on FIVES.
 
 ## 4. Results
 
-### 4.1 Training
+### 4.1 Baseline (version 1, pull request #4)
 
-Training ran 38 epochs in 51.2 minutes. The training loss fell from 1.00 to 0.16, the validation loss from 0.83 to 0.21. The best validation Dice on fixed crops was 0.878 at epoch 32. The validation loss did not rise again at the end, and the gap to the training loss stayed small. We see no sign of strong overfitting.
+Trained 51 minutes (38 epochs). Threshold 0.40 chosen on validation. FIVES test, 200 images, evaluated once:
 
-![Training curves](results/curves.png)
-
-*Figure 1. Left: loss on training crops and on validation crops. Right: Dice on validation crops. Made from `results/history.csv`.*
-
-### 4.2 Threshold
-
-Mean Dice on the 88 whole validation images was highest at threshold **0.40** (0.8985). The curve is flat: every threshold from 0.30 to 0.45 gives a value within 0.001 of the best. At threshold 0.40 the validation scores are Dice 0.899, IoU 0.827, precision 0.918, recall 0.887.
-
-### 4.3 Official test set
-
-**Table 1. Test results, 200 images, threshold 0.40. Mean ± standard deviation over images.**
-
-| Metric | All (200) | A – AMD (50) | D – DR (50) | G – glaucoma (50) | N – normal (50) |
+| Dice | IoU | Precision | Recall | Specificity | Accuracy |
 |---|---|---|---|---|---|
-| Dice | **0.875 ± 0.114** | 0.908 ± 0.055 | 0.876 ± 0.082 | 0.828 ± 0.190 | 0.887 ± 0.052 |
-| IoU | 0.791 ± 0.136 | 0.836 ± 0.083 | 0.787 ± 0.116 | 0.739 ± 0.206 | 0.801 ± 0.078 |
-| Precision | 0.909 ± 0.063 | 0.925 ± 0.049 | 0.925 ± 0.055 | 0.901 ± 0.089 | 0.886 ± 0.039 |
-| Recall | 0.856 ± 0.144 | 0.898 ± 0.087 | 0.840 ± 0.118 | 0.794 ± 0.218 | 0.892 ± 0.080 |
-| Specificity | 0.993 ± 0.005 | 0.994 ± 0.005 | 0.995 ± 0.004 | 0.996 ± 0.003 | 0.989 ± 0.004 |
-| Accuracy | 0.986 ± 0.006 | 0.987 ± 0.006 | 0.986 ± 0.006 | 0.988 ± 0.003 | 0.982 ± 0.006 |
+| 0.875 ± 0.114 (std) | 0.791 | 0.909 | 0.856 | 0.993 | 0.986 |
 
-Other summary numbers: median Dice 0.907, best image 0.956, worst image 0.031. Ten images have a Dice below 0.7. If all pixels of all test images are pooled together first, Dice is 0.899; this number hides the bad images and is not our main result.
+95% bootstrap interval for the mean Dice: 0.858 to 0.890. Median 0.907. By group: A 0.908, D 0.876, G 0.828, N 0.887. An all-black prediction has accuracy 0.929 and Dice 0, which is why accuracy is not a useful score for this task.
 
-### 4.4 Why accuracy is misleading
+![Training curves of the baseline](results/curves.png)
 
-**Table 2. Our model against a "predict nothing" baseline on the test set.**
+### 4.2 Measuring the weakness (baseline, validation)
 
-| Model | Accuracy | Dice | Recall |
-|---|---|---|---|
-| All-black mask (no vessels at all) | 0.929 | 0.000 | 0.000 |
-| Our U-Net | 0.986 | 0.875 | 0.856 |
+| Metric (88 validation images) | Value | 95% interval |
+|---|---|---|
+| Dice | 0.899 | 0.874 – 0.917 |
+| clDice | 0.905 | 0.879 – 0.925 |
+| Recall on thick-vessel pixels | 0.895 | |
+| **Recall on thin-vessel pixels** | **0.459** | 0.422 – 0.497 |
 
-About 93% of the pixels are background. A model that finds nothing is therefore "93% accurate". Accuracy mostly rewards the easy background. Specificity has the same problem: it is above 0.99 for every group and says almost nothing. Dice, IoU, precision and recall look at the vessel class and separate a useless model from a useful one. They are our main metrics.
+The model misses more than half of the thin-vessel pixels. Dice does not show this, because thin pixels are only 1.7% of all vessel pixels. This is the main weakness, and it is the reason for the two new metrics.
 
-### 4.5 Where the model fails
+### 4.3 Experiments (validation only)
 
-- **Recall is lower than precision** (0.856 against 0.909). The model seldom invents vessels, but it misses about one vessel pixel in seven. We expect these to be mostly thin, faint vessels, but we did not measure thin vessels separately.
-- **Glaucoma images are the weakest and the most variable** (Dice 0.828 ± 0.190). The four worst test images are all from this group. In the two worst (`122_G`, Dice 0.03; `123_G`, Dice 0.11) the expert mask itself contains very few vessel pixels (0.7% and 1.7% of the image, against a usual 7%), and the model predicts almost nothing (0.03% and 0.12%). These may be low-quality photographs. We have not verified this by eye.
-- **Normal images have the lowest precision** (0.886) although their recall is high. The model marks slightly more than the expert there.
-- On validation, one image (`174_D`) has Dice 0.15 although the model predicts about the same *amount* of vessel as the expert (8.1% against 8.5%). Prediction and mask do not overlap. A possible reason is a mask that does not belong to this photograph. This is a guess and was not checked.
+**Table 1. Validation results, 88 images. "Change" = mean per-image difference to the baseline with its 95% bootstrap interval.**
 
-Six example figures (image | expert mask | prediction | overlay) were saved to `runs/unet_fives/test_examples/`. They were chosen by a fixed rule, not by hand: the worst image, the best image, and the images at 20%, 40%, 60% and 80% of the Dice ranking. They are not in the Git repository, because the project rule is to keep dataset images out of Git.
+| Experiment | Threshold | Dice | clDice | Thin recall | Change in Dice | Change in thin recall | Kept? |
+|---|---|---|---|---|---|---|---|
+| Baseline (50 min) | 0.40 | 0.8985 | 0.9048 | 0.459 | – | – | – |
+| E1: baseline + flips | 0.35 | 0.9017 | 0.9091 | 0.480 | +0.003 (0.002 to 0.004) | +0.021 (0.017 to 0.025) | yes |
+| E2: 150 min training | 0.25 | 0.9072 | 0.9126 | 0.487 | +0.009 (0.007 to 0.011) | +0.028 (0.021 to 0.034) | yes |
+| E3: + soft clDice loss, 50 min | 0.35 | 0.8901 | 0.8986 | 0.438 | −0.008 (−0.010 to −0.007) | −0.022 (−0.029 to −0.014) | **no** |
+| E4: E2 + flips (final) | 0.30 | 0.9100 | 0.9154 | 0.484 | +0.011 (0.009 to 0.014) | +0.025 (0.018 to 0.032) | final |
 
-## 5. Discussion and limits
+- **E1, flips.** A small but consistent gain on all three metrics, with no retraining. Cost: prediction takes four times longer.
+- **E2, longer training.** 115 epochs in 151 minutes; best epoch 104. The largest single gain. Training loss 0.146, validation loss 0.203 at the end: the gap grew a little compared with the baseline (0.16 / 0.21) but the validation loss did not rise.
+- **E3, soft clDice loss** (weight 0.5 added to BCE + Dice, 10 skeleton iterations, 50 minutes like the baseline). **Worse on all three metrics, including clDice itself.** Two honest remarks: the extra loss makes each step slower, so the run finished 32 epochs instead of 38 in the same time; and we tried one weight only. So we can say "it did not help under our budget", not "clDice loss does not work". We dropped it.
+- **E4, combination.** Only E1 and E2 helped, so the combination needs no new training: it is the E2 model predicted with flips. This is our **final plain U-Net**. (Flips slightly lowered thin recall for this model, 0.487 → 0.484, while Dice and clDice rose. We decided by Dice, as fixed in advance.)
 
-The model does what a small U-Net should do: it finds most of the vessel tree on most images after less than one hour of training on a laptop. The numbers must be read with these limits:
+All differences come from one training run per setting. We did not measure how much results change between seeds, so small differences (a few thousandths) should not be over-read.
 
-1. **Patient overlap is possible.** 800 images come from 573 patients and no identifiers are published. The scores can be optimistic compared with truly new patients.
-2. **One run.** One seed and one training run. We have no error bar for the training itself.
-3. **One dataset.** No external test (for example CHASE_DB1). Other cameras and populations will probably give lower scores.
-4. **Labels are not perfect.** We found two empty masks and duplicated photographs with different annotations. The expert mask is a reference, not biological truth.
-5. **No field-of-view mask.** The dark border counts as background. This raises accuracy and specificity.
-6. **Model selection used centre crops**, not whole images. The retina border is under-represented there.
-7. **No comparison.** We did not train another model or a classical filter on the same split. We make no claim that this model is better than any published method, and we do not compare our Dice with numbers from papers, because their protocols differ.
-8. **Segmentation only.** No vessel width, length or branching is measured. Nothing in this project supports any medical statement about a patient.
+PRETRAINED_SECTION
 
-## 6. Conclusion
+### 4.5 Final FIVES test (200 images, evaluated once for the final model)
 
-A plain U-Net with 7.85 million parameters, trained for 51 minutes on full-resolution crops of FIVES, reaches a mean Dice of 0.875 on the 200 official test images, with the threshold fixed beforehand on validation data. The typical image is segmented well (median Dice 0.907). A small number of images, mainly glaucoma cases with sparse masks, fail badly. Accuracy is not informative for this task: an empty prediction already reaches 93%.
+**Table 3. Final plain U-Net (E4), threshold 0.30 with flips. Mean over images with 95% bootstrap interval.**
 
-Next steps, in order: look at the worst images by eye, repeat the training with several seeds, measure thin vessels separately, and test on an external dataset.
+| Metric | All (200) | A – AMD | D – DR | G – glaucoma | N – normal |
+|---|---|---|---|---|---|
+| Dice | **0.889** (0.873 – 0.903) | 0.917 | 0.889 | 0.850 | 0.902 |
+| clDice | 0.897 (0.881 – 0.911) | 0.921 | 0.895 | 0.851 | 0.921 |
+| Thin-vessel recall | 0.458 (0.433 – 0.482) | 0.455 | 0.389 | 0.461 | 0.525 |
+| Precision | 0.919 (0.910 – 0.927) | 0.934 | 0.935 | 0.916 | 0.891 |
+| Recall | 0.874 (0.854 – 0.892) | 0.906 | 0.854 | 0.820 | 0.917 |
+| IoU | 0.813 (0.794 – 0.830) | | | | |
+| Specificity | 0.994 | | | | |
+| Accuracy | 0.987 | | | | |
+
+Median Dice 0.914. Seven images have Dice below 0.7 (ten for the baseline). Recall on thick-vessel pixels: 0.881.
+
+Compared with version 1 on the same 200 images, the mean per-image Dice rose by **0.015** (95% interval 0.012 to 0.017). The gain is real but modest. The glaucoma group stays the weakest, with a wide interval (0.792 – 0.893). **Thin-vessel recall on the test set is 0.46: the main weakness is still there.** Longer training and flips improved everything a little; they did not solve the thin-vessel problem.
+
+### 4.6 External test on CHASE_DB1, and comparison with a human
+
+Three choices were fixed before any CHASE result was seen:
+
+1. **Scale.** The network learned vessel widths in pixels on FIVES. We measured the retina disc: about 2009 px wide in FIVES (median of 24 training images) for a nominal 50°, and 893 – 923 px in CHASE for a nominal 30°. To give both the same pixels per degree, each CHASE image is enlarged by a factor of about 1.31, predicted, and the *probability map* is resized back to the original size before thresholding. This "matched" setting is the main result. The "native" setting (no resizing) is reported too. The angles are nominal camera values, so the match is approximate.
+2. **Field of view.** CHASE has no official field-of-view mask. We build one by thresholding brightness (largest bright region, holes filled; 65 – 70% of the image) and count only pixels inside it.
+3. **Threshold.** The one chosen on FIVES validation (0.30 with flips). No tuning on CHASE.
+
+**Table 4. CHASE_DB1, 28 images of 14 children. Mean with 95% interval (children resampled).**
+
+| Comparison | Dice | clDice | Sensitivity | Specificity |
+|---|---|---|---|---|
+| Final model vs observer 1 (matched scale) | 0.766 (0.750 – 0.782) | 0.835 (0.825 – 0.845) | 0.908 (0.899 – 0.917) | 0.949 (0.945 – 0.953) |
+| Final model vs observer 2 (matched scale) | 0.745 (0.729 – 0.760) | 0.871 (0.865 – 0.878) | 0.904 (0.892 – 0.915) | 0.945 (0.939 – 0.950) |
+| Final model vs observer 1 (native scale) | 0.748 (0.734 – 0.763) | 0.807 (0.795 – 0.819) | 0.887 (0.877 – 0.898) | 0.947 (0.942 – 0.951) |
+| Baseline v1 vs observer 1 (matched scale) | 0.768 (0.752 – 0.783) | 0.830 (0.820 – 0.839) | 0.894 (0.884 – 0.904) | 0.952 (0.949 – 0.956) |
+| **Human: observer 2 vs observer 1** | 0.777 (0.766 – 0.788) | 0.835 (0.822 – 0.847) | 0.769 (0.731 – 0.807) | 0.978 (0.974 – 0.982) |
+PRETRAINED_CHASE_ROW
+
+How to read this:
+
+- **The model loses a lot outside FIVES.** Dice falls from 0.889 (FIVES test) to 0.766 (CHASE). Part of this is the dataset itself: even two human experts only agree at Dice 0.777 here.
+- **Model vs human.** The paired difference (model vs observer 1) − (observer 2 vs observer 1) is −0.012 in Dice (95% interval −0.035 to +0.011) and 0.000 in clDice (−0.012 to +0.012). Both intervals contain zero. With 14 children we cannot show a difference, and we cannot claim the model *equals* a human either: the sample is small.
+- **The errors are of a different kind.** The model's sensitivity is much higher than the human's (0.908 vs 0.769, difference +0.139, interval 0.103 to 0.176) and its specificity is lower (0.949 vs 0.978, difference −0.029, interval −0.031 to −0.026). Its precision is 0.66 against 0.80 for the human. So on CHASE the model marks clearly **more** pixels as vessel than observer 1 does. Possible reasons: vessels drawn wider than the experts draw them, or extra false vessels. We did not examine which.
+- **Scale matching helped** (Dice 0.766 vs 0.748, clDice 0.835 vs 0.807), as expected. It was the pre-declared main setting.
+- **The version 2 improvements did not transfer.** On CHASE the final model and the baseline have the same Dice (0.766 vs 0.768). What we gained on FIVES is specific to FIVES-like images.
+- Thin-vessel recall is not reported for CHASE: "3 pixels" means something different at this resolution.
+
+### 4.7 The three worst images, looked at by eye
+
+For `train/174_D` (validation), `test/122_G` and `test/123_G` we saved small figures (photo | expert mask | prediction) in `runs/unet_fives/worst_cases/` and looked at them.
+
+| Image | Baseline Dice | Expert vessel pixels | Predicted | What we see |
+|---|---|---|---|---|
+| `train/174_D` | 0.15 | 8.5% | 8.1% | **The expert mask does not match the photograph.** It shows a different vessel tree. The prediction follows the vessels visible in the photo. This is a label error, not a model failure. |
+| `test/122_G` | 0.03 | 0.7% | 0.03% | **Bad photograph.** Very dark and blurred, with a bright haze at the top. The expert could trace only a few vessel segments. The model found almost nothing. |
+| `test/123_G` | 0.11 | 1.7% | 0.12% | Same situation: very dark, blurred photograph; the expert traced one main vessel; the model found a few fragments. |
+
+So the two worst test images are low-quality photographs on which the model fails where a human still sees something. The worst validation image is a wrong label; it lowers our validation mean by about 0.008 Dice, for every experiment equally. We left it in so that all experiments use the same validation set.
+
+## 5. Limits
+
+1. **Thin vessels.** Fewer than half of the thin-vessel pixels are found. Any use that needs small vessels (capillary density, fine branching) is not supported.
+2. **External performance is clearly lower** (Dice 0.77 on CHASE) and the model over-marks vessels there. One external dataset with 14 children is a small test.
+3. **Patient overlap in FIVES is possible** (800 images, 573 patients, no identifiers). FIVES scores may be optimistic.
+4. **The FIVES test set has been used twice.** The second use evaluated one pre-selected model, but the test set is no longer untouched.
+5. **One seed per experiment.** We have error bars over *images*, not over *training runs*.
+6. **Labels are imperfect.** Two empty masks, one mismatched mask, six duplicated photographs with different annotations. As we read the FIVES paper, its masks keep only the pixels that two annotators both marked, which tends to make the reference masks conservative.
+7. **Bad photographs break the model** (dark, blurred images). There is no quality check that warns the user.
+8. **No field-of-view mask on FIVES**; nominal camera angles for the CHASE scale match; thin-vessel definition depends on resolution.
+9. **We compare with no published numbers.** Protocols differ between papers (splits, field of view, resolution), and we only quote numbers we computed ourselves.
+10. **Segmentation only.** No widths, lengths or branch counts. Nothing here supports a medical statement about a patient. Not a medical device.
+
+## 6. Next step: from mask to measurement
+
+The mask is not the goal. The goal of the wider MedSkel project is to *measure* vessels. The planned chain is:
+
+**photograph → CNN mask (this project) → skeleton / centre lines (the `medskel` geometry project) → vessel length, width and branching in pixels.**
+
+clDice already links the two halves: it scores a mask by what happens to its centre lines. The next experiment is to run both a standard pixel thinning and the `medskel` skeleton on the *same* predicted masks and on the expert masks, and to see how the 46% thin-vessel recall changes the measured vessel length. Until that is done, no claim about measurements can be made.
 
 ## Reproducing the results
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest                                # 22 tests, synthetic data
-.\.venv\Scripts\python.exe -m medskel_ai.data                       # data audit + split
-.\.venv\Scripts\python.exe -m medskel_ai.train --minutes 50         # training
-.\.venv\Scripts\python.exe -m medskel_ai.evaluate --split val       # threshold
-.\.venv\Scripts\python.exe -m medskel_ai.evaluate --split test      # final test, once
-.\.venv\Scripts\python.exe app.py                                   # demo
+.\.venv\Scripts\python.exe -m pytest                                              # 34 tests, synthetic data
+.\.venv\Scripts\python.exe -m medskel_ai.train --minutes 150 --out runs/e2_long   # final model
+.\.venv\Scripts\python.exe -m medskel_ai.evaluate --run runs/e2_long --split val --flips
+.\.venv\Scripts\python.exe -m medskel_ai.evaluate --run runs/e2_long --split test --flips   # once
+.\.venv\Scripts\python.exe -m medskel_ai.chase --run runs/e2_long --flips         # external test
+.\.venv\Scripts\python.exe scripts\compare.py unet_fives unet_fives:flips e3_cldice e2_long e2_long:flips
+.\.venv\Scripts\python.exe app.py                                                 # demo
 ```
 
-Result files: `results/history.csv`, `results/val_metrics.json`, `results/test_metrics.json`, `results/test_per_image.csv`. Training on a GPU with mixed precision is not bit-for-bit repeatable, so a new run will give slightly different numbers.
+Numbers are in `results/` (version 1) and `results/v2/` (version 2). GPU training with mixed precision is not bit-for-bit repeatable.
 
 ## References
 
 1. O. Ronneberger, P. Fischer, T. Brox. *U-Net: Convolutional Networks for Biomedical Image Segmentation.* MICCAI 2015. https://arxiv.org/abs/1505.04597
-2. K. Jin et al. *FIVES: A Fundus Image Dataset for Artificial Intelligence based Vessel Segmentation.* Scientific Data 9, 475 (2022). https://doi.org/10.1038/s41597-022-01564-3 — data: https://doi.org/10.6084/m9.figshare.19688169
-3. D. P. Kingma, J. Ba. *Adam: A Method for Stochastic Optimization.* ICLR 2015. https://arxiv.org/abs/1412.6980
-4. F. Milletari, N. Navab, S.-A. Ahmadi. *V-Net: Fully Convolutional Neural Networks for Volumetric Medical Image Segmentation* (Dice loss). 3DV 2016. https://arxiv.org/abs/1606.04797
+2. K. Jin et al. *FIVES: A Fundus Image Dataset for Artificial Intelligence based Vessel Segmentation.* Scientific Data 9, 475 (2022). https://doi.org/10.1038/s41597-022-01564-3
+3. M. M. Fraz et al. *An Ensemble Classification-Based Approach Applied to Retinal Blood Vessel Segmentation.* IEEE Trans. Biomedical Engineering 59 (2012). https://doi.org/10.1109/TBME.2012.2205687 — CHASE_DB1 dataset page: https://researchinnovation.kingston.ac.uk/en/datasets/chasedb1-retinal-vessel-reference-dataset-4/
+4. S. Shit et al. *clDice – a Novel Topology-Preserving Loss Function for Tubular Structure Segmentation.* CVPR 2021. https://arxiv.org/abs/2003.07311
+5. D. P. Kingma, J. Ba. *Adam: A Method for Stochastic Optimization.* ICLR 2015. https://arxiv.org/abs/1412.6980
+6. F. Milletari, N. Navab, S.-A. Ahmadi. *V-Net* (Dice loss). 3DV 2016. https://arxiv.org/abs/1606.04797
+7. K. He, X. Zhang, S. Ren, J. Sun. *Deep Residual Learning for Image Recognition.* CVPR 2016. https://arxiv.org/abs/1512.03385
+8. P. Iakubovskii. *Segmentation Models PyTorch* (software). https://github.com/qubvel-org/segmentation_models.pytorch

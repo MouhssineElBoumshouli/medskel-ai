@@ -204,7 +204,7 @@ Example with 10 pixels: `TP = 3, FP = 1, FN = 1, TN = 5`.
 
 Vessels are a small minority of the pixels. Imagine a lazy model that paints **everything black**. If 8% of the pixels are vessels, this model is 92% "accurate". But it found zero vessels: recall 0, Dice 0. Accuracy mostly measures the easy background. Specificity has the same weakness. That is why we judge the model by **Dice, IoU, precision and recall**. Our real "all black" baseline number is in section 10.
 
-## 10. Our real results
+## 10. Our real results (version 1, the baseline)
 
 All numbers below come from one real run on this laptop (RTX 3050, 4 GB) on 14 November 2026. The raw files are in `results/`.
 
@@ -242,7 +242,7 @@ What to notice:
 - **Glaucoma is the weakest group**, with the largest spread. The two worst images are `122_G` (Dice 0.03) and `123_G` (Dice 0.11). There the expert marked very few vessels (0.7% and 1.7% of the pixels) and the model found almost nothing. 10 of the 200 images have Dice below 0.7.
 - **The accuracy trap, with our real numbers.** A model that paints everything black gets **92.9%** accuracy on the test set, with Dice 0 and recall 0. Our model gets 98.6%. Both numbers look high. Only Dice (0 against 0.875) shows the real difference.
 
-## 11. Limits — say these out loud
+## 11. Limits of version 1 — say these out loud
 
 1. **Patients may overlap.** FIVES has 800 images from 573 patients, and no patient ids are published. So images of the same person can be in training and in validation, or in training and in test. Our scores may be a little optimistic. We cannot claim "tested on new patients".
 2. **Duplicate photos exist.** We found 6 cases where the same photo is stored under two names (5 in train, 1 in test, none shared between train and test). We keep such copies in the same part of the split.
@@ -287,3 +287,155 @@ At the end the training loss is 0.16 and the validation loss is 0.21. The gap is
 
 **Bonus: what would you do next?**
 Train several seeds to get error bars. Test on another dataset (CHASE_DB1). Measure thin vessels separately. Look by eye at the worst images to see whether the model or the label is wrong.
+
+---
+
+# Part 2 — What is new in version 2
+
+Version 1 gave one number: Dice 0.875. Version 2 asks harder questions. *Where exactly is the model weak? Can we fix it? Does it work on photos from another hospital? How sure are we about our numbers?*
+
+## 13. Why Dice is not enough
+
+Dice counts pixels. A thick vessel has many pixels. A thin vessel has few.
+
+Example. A thick vessel of 720 pixels and a thin vessel of 80 pixels. The model finds the thick one perfectly and misses the thin one completely.
+
+- Dice = `2·720 / (720 + 800) = 0.947`. Looks great.
+- But one of two vessels is gone.
+
+So we added two metrics that look at vessels, not at pixels.
+
+## 14. clDice — are the vessels connected?
+
+A **skeleton** is the centre line of a shape, one pixel wide. Think of drawing each vessel with the thinnest pen. A thick vessel and a thin vessel of the same length give skeleton lines of the same length.
+
+clDice compares skeletons with masks:
+
+- **Tprec** = how much of *our* skeleton lies inside the expert mask. Low means we drew vessels that are not there.
+- **Tsens** = how much of the *expert* skeleton lies inside our mask. Low means we missed vessels, or we cut them.
+- **clDice** = `2·Tprec·Tsens / (Tprec + Tsens)`.
+
+Same example. The expert skeleton has 80 + 80 = 160 pixels of line. Our mask covers only the 80 of the thick vessel. Tsens = 80/160 = **0.5**. Tprec = 1. clDice = `2·1·0.5 / 1.5 = 0.67`. Dice said 0.95. clDice says 0.67. clDice sees the lost vessel.
+
+A cut in a vessel also removes a piece of covered skeleton. So clDice also punishes broken vessels.
+
+This is the link to the **medskel** project. medskel computes vessel centre lines with geometry. clDice judges a mask by its centre lines. A mask with good clDice is a mask that a skeleton method can work with.
+
+Code: `src/medskel_ai/topology.py`.
+
+## 15. Thin-vessel recall
+
+First we must say what "thin" means. Our rule, fixed before we looked at any result:
+
+1. Take the skeleton of the **expert** mask.
+2. The **distance transform** gives, for each vessel pixel, the distance `d` to the nearest background pixel. On the centre line, `d` is half the vessel width. Width ≈ `2d − 1`. (A 1-pixel line has d = 1. A 3-pixel line has d = 2. A 5-pixel line has d = 3.)
+3. Each vessel pixel takes the width of its nearest centre-line pixel.
+4. **Thin = width ≤ 3 pixels.** (For even widths the formula is one pixel too small. So "thin" really means 1 to 4 pixels wide.)
+
+Thin-vessel recall = of all thin expert pixels, how many did we mark as vessel?
+
+Our baseline: **0.46**. For thick vessels: **0.89**. So the model finds almost 9 of 10 thick-vessel pixels, but fewer than 5 of 10 thin ones. Thin pixels are only 1.7% of all vessel pixels. That is why Dice never showed the problem.
+
+## 16. Flips (test-time augmentation)
+
+A vessel is still a vessel in a mirror. So we ask the network four times: the photo, the photo mirrored left-right, mirrored up-down, and both. We mirror each answer back and **average** the four probability maps.
+
+Why does it help? Each answer has small random errors. They are not the same in the four versions. Averaging cancels part of them. Like asking four people and taking the mean.
+
+Cost: 4 times slower. No retraining. Our gain on validation: Dice +0.003, thin recall +0.02. Small, but in every image group.
+
+## 17. Confidence intervals with the bootstrap
+
+"Dice = 0.889" is the mean over 200 test images. With 200 *other* images we would get a slightly different number. How different?
+
+The **bootstrap** answers this with a simple trick:
+
+1. Put the 200 Dice values in a bag.
+2. Draw 200 values **with replacement** (a value can come twice, another not at all). Compute the mean.
+3. Repeat 10,000 times. You get 10,000 means.
+4. Cut off the lowest 2.5% and the highest 2.5%. What remains is the **95% confidence interval**.
+
+Ours: 0.873 to 0.903. Read it as: "the true mean for images like these is probably in this range".
+
+Two special cases:
+
+- **Comparing two models on the same images.** We bootstrap the *difference* per image. If the interval does not contain 0, the difference is probably real. Final model minus baseline on the test set: +0.015, interval +0.012 to +0.017. Real, but small.
+- **Images that are not independent.** CHASE has two eyes per child. Two eyes of one child are similar. So we draw **children**, not images. This gives wider, more honest intervals.
+
+What the bootstrap does *not* cover: we trained each model only once. Another seed would give another model. That uncertainty is not in the interval.
+
+Code: `bootstrap_ci` in `src/medskel_ai/evaluate.py`.
+
+## 18. The experiments: one change at a time
+
+Rule: change **one** thing, keep everything else (data, seed, split), compare on **validation**. Otherwise you never know which change did what.
+
+| What we tried | Result on validation | Decision |
+|---|---|---|
+| E1: flips | a little better everywhere | keep |
+| E2: train 150 minutes instead of 50 | clearly better (Dice +0.009, thin recall +0.03) | keep |
+| E3: add a clDice term to the loss | **worse** (Dice −0.008, thin recall −0.02) | drop |
+| E4: E2 + flips | best (Dice 0.910) | final model |
+
+**About E3, the failed experiment.** The idea was good on paper: put clDice directly into the loss, so the network is punished for broken centre lines. A real skeleton has no gradient (it makes hard yes/no choices). So we used a **soft skeleton**: shrink the probability map step by step with "minimum of neighbours", and collect what disappears at each step. Only min and max, so gradients exist.
+
+It made the model worse. Possible reasons: each step is slower, so it finished 32 epochs instead of 38 in the same 50 minutes; and we tried only one weight (0.5). The honest sentence is: *"it did not help under our budget"*. Not: *"clDice loss is bad"*. A negative result that you report is worth more than a positive one that you hide.
+
+## 19. The pretrained baseline (transfer learning)
+
+Our U-Net starts from random weights. A common alternative is **transfer learning**: take an encoder (ResNet-34) that was already trained on ImageNet, 1.2 million everyday photos. It already knows edges, textures and shapes. Then train it further on our retina images.
+
+We trained such a model with the same data, the same loss and the same 150 minutes, only to have a strong reference point. It is **not** the model we explain.
+
+PRETRAINED_EXPLANATION
+
+## 20. External validation and "human versus human"
+
+A model can be good on FIVES and bad elsewhere. Other camera, other country, other age. So we tested on **CHASE_DB1**: 28 photos of 14 children, another camera. We did **not** train on it and did **not** tune anything on it. Even the threshold comes from FIVES.
+
+CHASE has a gift: every photo was annotated by **two** experts. So we can measure how well two humans agree. That is the realistic upper limit. Nobody can be expected to agree with observer 1 better than another expert does.
+
+| On CHASE_DB1 | Dice | Sensitivity | Specificity |
+|---|---|---|---|
+| Our model vs observer 1 | 0.766 | 0.908 | 0.949 |
+| Observer 2 vs observer 1 (human) | 0.777 | 0.769 | 0.978 |
+
+Three things to say:
+
+1. Dice dropped from 0.889 (FIVES) to 0.766 (CHASE). **The model is worse on unfamiliar images.** This is normal and must be said.
+2. In Dice, the model is close to the second human (difference −0.012, interval −0.035 to +0.011, contains 0). With only 14 children we cannot prove a difference. We also cannot claim "as good as a human".
+3. The model makes **other errors** than the human. It marks more pixels as vessel: higher sensitivity, lower specificity. It finds more, and it also paints too much.
+
+Two technical points we handled:
+
+- **Scale.** The network learned how wide vessels are *in pixels* on FIVES. CHASE photos show a smaller angle with fewer pixels. We enlarged CHASE images by about 1.31 so that one degree of retina has the same number of pixels as in FIVES. Then we shrank the probability map back. We decided this before seeing results.
+- **Field of view.** CHASE photos have a dark border. We count only pixels inside the retina disc.
+
+## 21. What we learned from the worst images
+
+We looked at the three worst images with our own eyes.
+
+- `train/174_D`: the expert mask belongs to another vessel tree. It does not fit the photo. The model was right; **the label was wrong**.
+- `test/122_G`, `test/123_G`: very dark, blurred photos. The expert drew a few vessels. The model found almost none. **Bad photo and model failure.**
+
+Lesson: a low score does not always mean a bad model. Always look.
+
+## 22. More professor questions (version 2)
+
+**11. Your Dice went from 0.875 to 0.889. Is that a real improvement?**
+Yes, but small. On the same 200 images the mean difference is +0.015, with a 95% interval from +0.012 to +0.017. The interval does not contain 0. Limits: one training run per model, and the test set was used twice.
+
+**12. You used the test set twice. Is that a problem?**
+It is a weakness, and we say it. Every decision in version 2 was made on validation data. The test set was opened once for the single final model. But a truly clean result would need a test set never seen before. CHASE plays part of this role.
+
+**13. Why did you drop the clDice loss when clDice is the metric you care about?**
+Because on validation it lowered Dice, clDice and thin-vessel recall. We keep what the data supports, not what sounds good. We tried one weight and one time budget, so the conclusion is limited.
+
+**14. Is your model as good as a human expert?**
+We cannot say that. On CHASE its Dice against observer 1 (0.766) is close to the second observer's (0.777), and the difference is not statistically clear with 14 children. But the model over-marks vessels, misses more than half of thin vessels on FIVES, and fails on dark photos.
+
+**15. Why is a bootstrap by children wider than a bootstrap by images?**
+Two eyes of one child give similar scores. They are not two independent pieces of information. If we pretend they are, we count our evidence twice and the interval becomes too narrow.
+
+**16. What is the biggest remaining weakness?**
+Thin vessels. Recall 0.46 on the test set. Ideas for later: a loss that weights thin vessels more, training at higher zoom, or more training time. Each must be tested on validation first.

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medskel-ai"
+version = "0.1.0"
+description = "A small, readable U-Net for retinal vessel segmentation on FIVES (university project)."
+requires-python = ">=3.11"
+# PyTorch is NOT listed here on purpose: install the CUDA build first (see README).
+dependencies = ["numpy", "pillow", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+demo = ["gradio", "nbconvert", "ipykernel", "nbformat"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

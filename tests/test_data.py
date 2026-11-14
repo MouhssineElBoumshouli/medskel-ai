@@ -44,6 +44,24 @@ def test_split_is_deterministic_and_never_contains_test(fake_fives):
     assert not test_files & {p["image"] for p in first[0] + first[1]}
 
 
+def test_identical_photos_stay_in_the_same_part(fake_fives):
+    """The same photo saved under two names must not be split between train and validation."""
+    original = fake_fives / "train" / "Original"
+    for seed in range(20):
+        (original / "2_A.png").write_bytes((original / "1_A.png").read_bytes())  # 2_A is now a copy of 1_A
+        train, val = make_split(list_pairs(fake_fives, "train"), val_fraction=0.3, seed=seed)
+        val_ids = {p["id"] for p in val}
+        assert ("train/1_A" in val_ids) == ("train/2_A" in val_ids)
+        assert len(train) + len(val) == 40
+
+
+def test_known_empty_masks_are_excluded(fake_fives):
+    pairs = list_pairs(fake_fives, "train")
+    train, val = make_split(pairs, exclude={"train/3_A"})
+    assert "train/3_A" not in {p["id"] for p in train + val}
+    assert len(train) + len(val) == 39
+
+
 def test_mask_is_exactly_zero_or_one(fake_fives):
     pair = list_pairs(fake_fives, "train")[0]
     mask = load_mask(pair["mask"], strict=True)

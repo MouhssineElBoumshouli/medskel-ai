@@ -84,28 +84,54 @@ def list_pairs(root: str | Path, split: str) -> list[dict]:
     return pairs
 
 
-def make_split(pairs: list[dict], val_fraction: float = 0.15, seed: int = 42):
+# Found by our audit of the real download (results/data_audit.json): these two
+# training masks are completely black although the photographs show a retina.
+# They are label errors, so we use them neither for training nor for validation.
+EMPTY_TRAIN_MASKS = frozenset({"train/447_G", "train/448_G"})
+
+
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def make_split(pairs: list[dict], val_fraction: float = 0.15, seed: int = 42, exclude=EMPTY_TRAIN_MASKS):
     """Split the official TRAIN pairs into train and validation parts.
 
     - Only training images are used. The official test set is never touched here.
     - Stratified: we take the same share from each disease group (A, D, G, N).
     - Deterministic: the same seed always gives the same split.
+    - Byte-identical photographs stay together. Our audit found the same photo
+      stored under two names several times (for example 55_A and 134_A). If one
+      copy were in train and the other in validation, the validation score
+      would be too optimistic. So copies always go to the same part.
 
     Limit: FIVES has 800 images from 573 patients and publishes no patient ids.
-    So two images of the same patient can land in different parts. We cannot
-    rule this out, and we say so in the report.
+    Two DIFFERENT photos of the same patient can still land in different parts.
+    We cannot rule this out, and we say so in the report.
     """
-    by_group: dict[str, list[dict]] = {}
+    by_group: dict[str, dict[str, list[dict]]] = {}  # group -> file hash -> pairs with that hash
     for pair in pairs:
-        by_group.setdefault(pair["group"], []).append(pair)
+        if pair["id"] in exclude:
+            continue
+        by_group.setdefault(pair["group"], {}).setdefault(_sha256(pair["image"]), []).append(pair)
     rng = random.Random(seed)
     train, val = [], []
     for group in sorted(by_group):
-        members = sorted(by_group[group], key=lambda p: _numeric_key(Path(p["image"]).stem))
-        rng.shuffle(members)
-        n_val = int(round(len(members) * val_fraction))
-        val.extend(members[:n_val])
-        train.extend(members[n_val:])
+        # A "unit" is one photo, or several identical copies of one photo.
+        units = sorted(by_group[group].values(), key=lambda unit: _numeric_key(Path(unit[0]["image"]).stem))
+        rng.shuffle(units)
+        n_val = int(round(sum(len(unit) for unit in units) * val_fraction))
+        taken = 0
+        for unit in units:
+            if taken < n_val:
+                val.extend(unit)
+                taken += len(unit)
+            else:
+                train.extend(unit)
     return train, val
 
 
@@ -230,21 +256,13 @@ def _augment_brightness(image: torch.Tensor) -> torch.Tensor:
 # --------------------------------------------------------------------------
 # Audit of the real files (run once, writes a small JSON report)
 # --------------------------------------------------------------------------
-def _sha256(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def audit(root: str | Path) -> dict:
     """Check every file: counts, sizes, binary masks, and identical files across splits."""
     report: dict = {"root": str(root), "splits": {}}
     hashes: dict[str, list[str]] = {}
     for split in ("train", "test"):
         pairs = list_pairs(root, split)
-        sizes, nonbinary, size_mismatch, groups = {}, [], [], {}
+        sizes, nonbinary, size_mismatch, groups, empty = {}, [], [], {}, []
         fractions: dict[str, list[float]] = {}
         for pair in pairs:
             groups[pair["group"]] = groups.get(pair["group"], 0) + 1
@@ -259,6 +277,8 @@ def audit(root: str | Path) -> dict:
                 size_mismatch.append(pair["id"])
             if not set(np.unique(grey).tolist()) <= {0, 255}:
                 nonbinary.append(pair["id"])
+            if grey.max() == 0:
+                empty.append(pair["id"])
             if split == "train":  # label statistics only from training data
                 fractions.setdefault(pair["group"], []).append(float((grey > 127).mean()))
         entry = {
@@ -267,6 +287,7 @@ def audit(root: str | Path) -> dict:
             "image_sizes": sizes,
             "image_mask_size_mismatch": size_mismatch,
             "masks_with_values_other_than_0_255": nonbinary,
+            "completely_black_masks": empty,
         }
         if split == "train":
             everything = [f for values in fractions.values() for f in values]
@@ -291,7 +312,8 @@ def main() -> None:
     Path(args.split_out).parent.mkdir(parents=True, exist_ok=True)
     manifest = {
         "seed": args.seed,
-        "note": "Validation comes only from the official training set. No patient ids are published for FIVES.",
+        "note": "Validation comes only from the official training set. Identical image files are kept in the same part. No patient ids are published for FIVES.",
+        "excluded_empty_masks": sorted(EMPTY_TRAIN_MASKS),
         "train": [p["id"] for p in train],
         "val": [p["id"] for p in val],
     }

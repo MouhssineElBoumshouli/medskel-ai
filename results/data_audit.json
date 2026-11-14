@@ -1,0 +1,68 @@
+{
+ "root": "C:\\data\\FIVES",
+ "splits": {
+  "train": {
+   "pairs": 600,
+   "groups": {
+    "A": 150,
+    "D": 150,
+    "G": 150,
+    "N": 150
+   },
+   "image_sizes": {
+    "(2048, 2048)": 600
+   },
+   "image_mask_size_mismatch": [],
+   "masks_with_values_other_than_0_255": [],
+   "vessel_pixel_fraction_mean": 0.07457076986630758,
+   "vessel_pixel_fraction_min": 0.0,
+   "vessel_pixel_fraction_max": 0.10915946960449219,
+   "vessel_pixel_fraction_by_group": {
+    "A": 0.07259274164835612,
+    "D": 0.06919314702351888,
+    "G": 0.0666083033879598,
+    "N": 0.08988888740539551
+   }
+  },
+  "test": {
+   "pairs": 200,
+   "groups": {
+    "A": 50,
+    "D": 50,
+    "G": 50,
+    "N": 50
+   },
+   "image_sizes": {
+    "(2048, 2048)": 200
+   },
+   "image_mask_size_mismatch": [],
+   "masks_with_values_other_than_0_255": []
+  }
+ },
+ "identical_image_files": [
+  [
+   "train/34_A",
+   "train/118_A"
+  ],
+  [
+   "train/39_A",
+   "train/132_A"
+  ],
+  [
+   "train/53_A",
+   "train/97_A"
+  ],
+  [
+   "train/55_A",
+   "train/134_A"
+  ],
+  [
+   "train/61_A",
+   "train/121_A"
+  ],
+  [
+   "test/32_A",
+   "test/48_A"
+  ]
+ ]
+}

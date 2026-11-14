@@ -52,3 +52,6 @@ Nothing in v2 has touched the FIVES test set yet.
 - [ ] Chain 1 running in background: scripts/run_chain1.ps1 = E3 (runs/e3_cldice, 50 min, clDice weight 0.5) then E2 (runs/e2_long, 150 min), each with val eval (plain + flips). Read the RESULT lines at the tail of each eval log.
 - [ ] Then decide E4, train pretrained baseline (`--arch resnet34`, deps installed), CHASE (still needs manual download), final test, report, PR, Space.
 - app.py already redesigned (Gradio Blocks); ABOUT.md still a placeholder.
+- v2 results so far: final plain U-Net = runs/e2_long + flips (threshold 0.30). FIVES test (once): Dice 0.889, clDice 0.897, thin recall 0.458. CHASE vs observer 1: Dice 0.766 (human 0.777). E3 clDice loss dropped (worse on validation).
+- Chain 2 (scripts/run_chain2.ps1) is training the pretrained baseline runs/pretrained_r34 (150 min) then val evals. After it: choose flips or not on validation, run its test (once) + chase, fill PRETRAINED_* placeholders in report.md, docs/explanation.md, ABOUT.md, copy numbers to results/v2, open PR.
+- Hugging Face Space: BLOCKED. Owner is logged in (hf auth whoami works) but Hugging Face refuses to create a Gradio Space on the free tier ("requires a PRO subscription"). Nothing was created or uploaded. space/ and scripts/build_space.ps1 are ready if the owner subscribes. No example images are included in the Space build.

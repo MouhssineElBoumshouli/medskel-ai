@@ -12,11 +12,14 @@ folder `model/` next to this file (see space/README.md).
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import gradio as gr
 import numpy as np
 import torch
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))  # lets the Space find medskel_ai without installing it
 
 from medskel_ai.data import resize_image_bilinear, resize_mask_nearest
 from medskel_ai.predict import load_model, make_overlay, predict_probability

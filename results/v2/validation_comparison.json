@@ -1,0 +1,200 @@
+{
+ "unet_fives": {
+  "threshold": 0.4,
+  "dice": 0.8985,
+  "dice_diff": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "cldice": 0.9048,
+  "cldice_diff": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "thin_recall": 0.4594,
+  "thin_recall_diff": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "precision": 0.9178,
+  "precision_diff": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "recall": 0.8871,
+  "recall_diff": [
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "unet_fives:flips": {
+  "threshold": 0.35,
+  "dice": 0.9017,
+  "dice_diff": [
+   0.0032,
+   0.0023,
+   0.0041
+  ],
+  "cldice": 0.9091,
+  "cldice_diff": [
+   0.0043,
+   0.0033,
+   0.0055
+  ],
+  "thin_recall": 0.4803,
+  "thin_recall_diff": [
+   0.0209,
+   0.0174,
+   0.0248
+  ],
+  "precision": 0.9151,
+  "precision_diff": [
+   -0.0027,
+   -0.0033,
+   -0.0021
+  ],
+  "recall": 0.8955,
+  "recall_diff": [
+   0.0084,
+   0.0073,
+   0.0096
+  ]
+ },
+ "e3_cldice": {
+  "threshold": 0.35,
+  "dice": 0.8901,
+  "dice_diff": [
+   -0.0084,
+   -0.0101,
+   -0.0069
+  ],
+  "cldice": 0.8986,
+  "cldice_diff": [
+   -0.0062,
+   -0.0081,
+   -0.0044
+  ],
+  "thin_recall": 0.4379,
+  "thin_recall_diff": [
+   -0.0215,
+   -0.0285,
+   -0.0144
+  ],
+  "precision": 0.9123,
+  "precision_diff": [
+   -0.0055,
+   -0.0076,
+   -0.0035
+  ],
+  "recall": 0.877,
+  "recall_diff": [
+   -0.01,
+   -0.0128,
+   -0.0074
+  ]
+ },
+ "e3_cldice:flips": {
+  "threshold": 0.35,
+  "dice": 0.8942,
+  "dice_diff": [
+   -0.0043,
+   -0.0059,
+   -0.0028
+  ],
+  "cldice": 0.9032,
+  "cldice_diff": [
+   -0.0016,
+   -0.0035,
+   0.0002
+  ],
+  "thin_recall": 0.4465,
+  "thin_recall_diff": [
+   -0.0129,
+   -0.0201,
+   -0.0055
+  ],
+  "precision": 0.916,
+  "precision_diff": [
+   -0.0018,
+   -0.0035,
+   -0.0
+  ],
+  "recall": 0.8816,
+  "recall_diff": [
+   -0.0055,
+   -0.0081,
+   -0.003
+  ]
+ },
+ "e2_long": {
+  "threshold": 0.25,
+  "dice": 0.9072,
+  "dice_diff": [
+   0.0086,
+   0.0068,
+   0.0108
+  ],
+  "cldice": 0.9126,
+  "cldice_diff": [
+   0.0078,
+   0.0056,
+   0.0103
+  ],
+  "thin_recall": 0.4872,
+  "thin_recall_diff": [
+   0.0278,
+   0.0211,
+   0.0341
+  ],
+  "precision": 0.9224,
+  "precision_diff": [
+   0.0046,
+   0.0033,
+   0.0058
+  ],
+  "recall": 0.8983,
+  "recall_diff": [
+   0.0112,
+   0.0084,
+   0.0145
+  ]
+ },
+ "e2_long:flips": {
+  "threshold": 0.3,
+  "dice": 0.91,
+  "dice_diff": [
+   0.0114,
+   0.0094,
+   0.0139
+  ],
+  "cldice": 0.9154,
+  "cldice_diff": [
+   0.0106,
+   0.0082,
+   0.0133
+  ],
+  "thin_recall": 0.4841,
+  "thin_recall_diff": [
+   0.0248,
+   0.0176,
+   0.0317
+  ],
+  "precision": 0.9282,
+  "precision_diff": [
+   0.0104,
+   0.0093,
+   0.0116
+  ],
+  "recall": 0.8984,
+  "recall_diff": [
+   0.0113,
+   0.0082,
+   0.0148
+  ]
+ }
+}

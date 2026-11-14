@@ -21,14 +21,14 @@ All numbers were computed by us. The value in brackets is a 95% bootstrap confid
 | CHASE_DB1, external, vs human observer 1 | 28 (14 children) | 0.766 (0.750 – 0.782) | 0.835 (0.825 – 0.845) | 0.908 | 0.949 |
 | For comparison: human observer 2 vs observer 1 on CHASE_DB1 | 28 | 0.777 (0.766 – 0.788) | 0.835 (0.822 – 0.847) | 0.769 | 0.978 |
 
-PRETRAINED_ABOUT
+**Honest comparison.** A standard U-Net with an ImageNet-pretrained ResNet34 encoder (24.4 million parameters), trained with the same data and time, is better on FIVES: Dice 0.907 (0.891 – 0.921). On CHASE_DB1 it reaches the same level as our model (Dice 0.770). Our small model is the one we can explain line by line; it is not the strongest possible model.
 
 ## Known weaknesses
 
 - **Thin vessels:** only 46% of thin-vessel pixels (1 to 4 pixels wide) are found on the FIVES test set, against 88% for thicker vessels.
 - **Other cameras:** quality drops on images unlike FIVES (Dice 0.89 → 0.77 on CHASE_DB1), and the model marks too many pixels as vessel there.
 - **Dark or blurred photographs** can give an almost empty result.
-- FIVES has 800 images from 573 patients without patient identifiers, so FIVES scores may be optimistic. The FIVES test set was used twice during the project.
+- FIVES has 800 images from 573 patients without patient identifiers, so FIVES scores may be optimistic. The FIVES test set was used in two rounds during the project.
 
 ## Sources
 

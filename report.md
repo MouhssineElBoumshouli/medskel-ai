@@ -10,11 +10,11 @@
 
 We train a plain U-Net (7.85 million parameters, no pretrained weights) to mark blood vessels in colour photographs of the retina, using the public FIVES dataset (800 photographs, 2048 x 2048 pixels, expert masks). Version 1 of this project reached a mean Dice of 0.875 on the 200 official test images. Version 2 asks two questions: can we improve it, and how far can we trust it?
 
-We first measured the known weakness with two new metrics. On validation images the baseline finds 89% of thick-vessel pixels but only **46% of thin-vessel pixels**. We then tested changes one at a time on validation data only. Training three times longer and averaging predictions over mirrored copies of the image both helped. Adding a clDice term to the loss did not help and was dropped. The final model reaches a mean Dice of **0.889** (95% interval 0.873 to 0.903) on the FIVES test set, clDice 0.897 and thin-vessel recall 0.458. PRETRAINED_ABSTRACT
+We first measured the known weakness with two new metrics. On validation images the baseline finds 89% of thick-vessel pixels but only **46% of thin-vessel pixels**. We then tested changes one at a time on validation data only. Training three times longer and averaging predictions over mirrored copies of the image both helped. Adding a clDice term to the loss did not help and was dropped. The final model reaches a mean Dice of **0.889** (95% interval 0.873 to 0.903) on the FIVES test set, clDice 0.897 and thin-vessel recall 0.458. A standard U-Net with an ImageNet-pretrained ResNet34 encoder, trained with the same data and time, is better (Dice 0.907): our from-scratch model is a sound baseline, not the strongest possible model.
 
 On an external dataset from another camera and population (CHASE_DB1, 28 images of 14 children, never used for training or tuning), the final model reaches Dice 0.766 against the first human observer. The second human observer reaches 0.777 against the first. The difference is not statistically clear, but the model and the human make different kinds of errors: the model marks more pixels as vessel.
 
-The FIVES test set has now been used twice (once per version). The model is a research prototype, not a medical device.
+The FIVES test set has now been used twice: once in version 1, and once in version 2 for the two final models (one evaluation each). The model is a research prototype, not a medical device.
 
 ## 1. Introduction
 
@@ -79,7 +79,7 @@ All FIVES metrics use every pixel of the image. CHASE metrics use the pixels ins
 
 1. Every decision (which change to keep, which threshold) is made on the 88 validation images.
 2. One change at a time, same seed, same data split.
-3. The FIVES test set is evaluated once for the final model. **The test set was already used once for version 1, so it has now been used twice.** The version 1 result is kept below unchanged. We did not re-evaluate the version 1 model on the test set with the new metrics.
+3. The FIVES test set is evaluated once for each of the two final models (our plain U-Net and the pretrained reference), after all choices were fixed. **The test set was already used once for version 1, so it has now been used twice** (two rounds, three model evaluations in total). The version 1 result is kept below unchanged. We did not re-evaluate the version 1 model on the test set with the new metrics.
 4. CHASE_DB1 is evaluated with the model and threshold fixed on FIVES.
 
 ## 4. Results
@@ -126,7 +126,21 @@ The model misses more than half of the thin-vessel pixels. Dice does not show th
 
 All differences come from one training run per setting. We did not measure how much results change between seeds, so small differences (a few thousandths) should not be over-read.
 
-PRETRAINED_SECTION
+### 4.4 A strong reference: U-Net with a pretrained encoder
+
+To know how good our small model really is, we trained a standard strong baseline: a U-Net whose encoder is a ResNet34 pretrained on ImageNet (library `segmentation_models_pytorch`, 24.4 million parameters). Same data, same split, same loss, same seed, same 150-minute budget (191 epochs, because each epoch is faster). Flips and threshold (0.40) were chosen on validation, as for our model. It is a comparison model only; the model we explain remains the plain U-Net.
+
+**Table 2. Our final plain U-Net against the pretrained baseline. "Difference" = pretrained minus ours, per image, with 95% interval.**
+
+| | Parameters | Val Dice | Val clDice | Val thin recall | Test Dice | Test clDice | Test thin recall |
+|---|---|---|---|---|---|---|---|
+| Our plain U-Net (E4) | 7.8 M | 0.910 | 0.915 | 0.484 | 0.889 (0.873 – 0.903) | 0.897 | 0.458 |
+| Pretrained ResNet34 U-Net | 24.4 M | 0.924 | 0.926 | 0.525 | 0.907 (0.891 – 0.921) | 0.910 | 0.485 |
+| Difference on the test set | | | | | +0.018 (0.016 to 0.020) | +0.013 (0.011 to 0.016) | +0.027 (0.015 to 0.040) |
+
+**The pretrained model is better on every metric**, on validation and on the test set, and the intervals of the differences do not contain zero. Its test Dice by group: A 0.934, D 0.910, G 0.867, N 0.918; five images below 0.7. This is the expected result: the pretrained encoder starts with useful filters from 1.2 million images and is three times larger.
+
+Two things it does **not** change: thin-vessel recall stays below 50% (0.485), and the same dark photographs fail (worst image Dice 0.02). So the thin-vessel weakness is not specific to our small model.
 
 ### 4.5 Final FIVES test (200 images, evaluated once for the final model)
 
@@ -164,7 +178,7 @@ Three choices were fixed before any CHASE result was seen:
 | Final model vs observer 1 (native scale) | 0.748 (0.734 – 0.763) | 0.807 (0.795 – 0.819) | 0.887 (0.877 – 0.898) | 0.947 (0.942 – 0.951) |
 | Baseline v1 vs observer 1 (matched scale) | 0.768 (0.752 – 0.783) | 0.830 (0.820 – 0.839) | 0.894 (0.884 – 0.904) | 0.952 (0.949 – 0.956) |
 | **Human: observer 2 vs observer 1** | 0.777 (0.766 – 0.788) | 0.835 (0.822 – 0.847) | 0.769 (0.731 – 0.807) | 0.978 (0.974 – 0.982) |
-PRETRAINED_CHASE_ROW
+| Pretrained ResNet34 U-Net vs observer 1 (matched scale) | 0.770 (0.754 – 0.785) | 0.840 (0.830 – 0.849) | 0.914 (0.906 – 0.922) | 0.949 (0.945 – 0.953) |
 
 How to read this:
 
@@ -173,6 +187,7 @@ How to read this:
 - **The errors are of a different kind.** The model's sensitivity is much higher than the human's (0.908 vs 0.769, difference +0.139, interval 0.103 to 0.176) and its specificity is lower (0.949 vs 0.978, difference −0.029, interval −0.031 to −0.026). Its precision is 0.66 against 0.80 for the human. So on CHASE the model marks clearly **more** pixels as vessel than observer 1 does. Possible reasons: vessels drawn wider than the experts draw them, or extra false vessels. We did not examine which.
 - **Scale matching helped** (Dice 0.766 vs 0.748, clDice 0.835 vs 0.807), as expected. It was the pre-declared main setting.
 - **The version 2 improvements did not transfer.** On CHASE the final model and the baseline have the same Dice (0.766 vs 0.768). What we gained on FIVES is specific to FIVES-like images.
+- **The pretrained model's advantage also disappears on CHASE** (0.770 vs 0.766). All three models land at the same place, slightly below human agreement in Dice, with the same over-marking. The limit on CHASE seems to be the change of camera and population, not the size of the model.
 - Thin-vessel recall is not reported for CHASE: "3 pixels" means something different at this resolution.
 
 ### 4.7 The three worst images, looked at by eye
@@ -192,7 +207,7 @@ So the two worst test images are low-quality photographs on which the model fail
 1. **Thin vessels.** Fewer than half of the thin-vessel pixels are found. Any use that needs small vessels (capillary density, fine branching) is not supported.
 2. **External performance is clearly lower** (Dice 0.77 on CHASE) and the model over-marks vessels there. One external dataset with 14 children is a small test.
 3. **Patient overlap in FIVES is possible** (800 images, 573 patients, no identifiers). FIVES scores may be optimistic.
-4. **The FIVES test set has been used twice.** The second use evaluated one pre-selected model, but the test set is no longer untouched.
+4. **The FIVES test set has been used twice.** The second round evaluated two pre-selected models once each, but the test set is no longer untouched.
 5. **One seed per experiment.** We have error bars over *images*, not over *training runs*.
 6. **Labels are imperfect.** Two empty masks, one mismatched mask, six duplicated photographs with different annotations. As we read the FIVES paper, its masks keep only the pixels that two annotators both marked, which tends to make the reference masks conservative.
 7. **Bad photographs break the model** (dark, blurred images). There is no quality check that warns the user.

@@ -42,9 +42,27 @@ MODEL_DIR = find_model_dir()
 ON_GPU = torch.cuda.is_available() and os.environ.get("MEDSKEL_DEVICE", "") != "cpu"
 DEVICE = "cuda" if ON_GPU else "cpu"
 torch.set_num_threads(max(1, (os.cpu_count() or 2)))
-# Two thresholds were chosen on FIVES validation images: one for a single pass, one for 4 mirrored passes.
-model, device, THRESHOLD_PLAIN = load_model(MODEL_DIR / "best.pt", device=DEVICE, flips=False)
-_, _, THRESHOLD_FLIPS = load_model(MODEL_DIR / "best.pt", device=DEVICE, flips=True)
+OURS = "Our U-Net, trained from scratch (the explained model)"
+PRETRAINED = "Comparison: U-Net with ImageNet-pretrained ResNet34 encoder"
+MODEL_DIRS = {OURS: MODEL_DIR}
+if (HERE / "runs" / "pretrained_r34" / "best.pt").exists():  # only on the training computer
+    MODEL_DIRS[PRETRAINED] = HERE / "runs" / "pretrained_r34"
+_loaded: dict = {}
+
+
+def get_model(name: str):
+    """Load a model the first time it is asked for. Returns (model, device, threshold single pass, threshold 4 passes).
+
+    The two thresholds were chosen on FIVES validation images.
+    """
+    if name not in _loaded:
+        net, dev, plain = load_model(MODEL_DIRS[name] / "best.pt", device=DEVICE, flips=False)
+        _, _, with_flips = load_model(MODEL_DIRS[name] / "best.pt", device=DEVICE, flips=True)
+        _loaded[name] = (net, dev, plain, with_flips)
+    return _loaded[name]
+
+
+_, device, THRESHOLD_PLAIN, THRESHOLD_FLIPS = get_model(OURS)
 ABOUT_FILE = HERE / "ABOUT.md"
 ABOUT = ABOUT_FILE.read_text(encoding="utf-8") if ABOUT_FILE.exists() else "Results table not found."
 
@@ -59,9 +77,10 @@ def example_images() -> list[str]:
     return [str(fives / n) for n in names if (fives / n).exists()]
 
 
-def segment(image: np.ndarray | None, threshold: float, flips: bool, match_scale: bool):
+def segment(image: np.ndarray | None, threshold: float, flips: bool, match_scale: bool, model_name: str = OURS):
     if image is None:
         raise gr.Error("Upload a retina photograph first.")
+    model = get_model(model_name)[0]
     image = np.ascontiguousarray(image[..., :3])
     height, width = image.shape[:2]
     work = image
@@ -81,8 +100,9 @@ def segment(image: np.ndarray | None, threshold: float, flips: bool, match_scale
     return (image, overlay), mask * 255, info
 
 
-def default_threshold(flips: bool) -> float:
-    return THRESHOLD_FLIPS if flips else THRESHOLD_PLAIN
+def default_threshold(flips: bool, model_name: str = OURS) -> float:
+    _, _, plain, with_flips = get_model(model_name)
+    return with_flips if flips else plain
 
 
 CSS = """
@@ -106,6 +126,7 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
                     threshold = gr.Slider(0.05, 0.95, value=default_threshold(ON_GPU), step=0.05, label="Threshold", info="A pixel is called vessel if its probability is at least this value. The default was chosen on validation images.")
                     flips = gr.Checkbox(value=ON_GPU, label="Higher quality: average 4 mirrored passes", info="About 4x slower. Recommended on a GPU.")
                     match_scale = gr.Checkbox(value=True, label="Resize to the training scale (longest side 2048 px)")
+                    model_name = gr.Dropdown(list(MODEL_DIRS), value=OURS, label="Model", visible=len(MODEL_DIRS) > 1)
                     run = gr.Button("Find the vessels", variant="primary")
                     examples = example_images()
                     if examples:
@@ -124,8 +145,9 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
         with gr.Tab("About"):
             gr.Markdown(ABOUT)
 
-    run.click(segment, inputs=[photo, threshold, flips, match_scale], outputs=[slider, mask_out, info])
-    flips.change(default_threshold, inputs=flips, outputs=threshold)
+    run.click(segment, inputs=[photo, threshold, flips, match_scale, model_name], outputs=[slider, mask_out, info])
+    flips.change(default_threshold, inputs=[flips, model_name], outputs=threshold)
+    model_name.change(default_threshold, inputs=[flips, model_name], outputs=threshold)
 
 if __name__ == "__main__":
     fives_dir = os.environ.get("FIVES_DIR", r"C:\data\FIVES")

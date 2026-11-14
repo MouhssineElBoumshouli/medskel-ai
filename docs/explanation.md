@@ -387,7 +387,16 @@ Our U-Net starts from random weights. A common alternative is **transfer learnin
 
 We trained such a model with the same data, the same loss and the same 150 minutes, only to have a strong reference point. It is **not** the model we explain.
 
-PRETRAINED_EXPLANATION
+| FIVES test set | Parameters | Dice | clDice | Thin recall |
+|---|---|---|---|---|
+| Our plain U-Net | 7.8 million | 0.889 | 0.897 | 0.458 |
+| Pretrained ResNet34 U-Net | 24.4 million | 0.907 | 0.910 | 0.485 |
+
+**The pretrained model is better.** The difference in Dice is +0.018 (interval +0.016 to +0.020). We say this openly. It is the expected result: it starts with knowledge from 1.2 million images and it is three times larger.
+
+What stays true for our model: it is small, we wrote every layer, and we can explain every number in it. And two findings are the same for both models: thin-vessel recall stays under 50%, and on the external CHASE images both reach the same Dice (0.77). So the hard problems are not solved by a bigger model alone.
+
+If the professor asks "why not just use the pretrained one?": for a product, you would. For a course about CNNs, the model you can explain line by line is the right main model, and the pretrained one tells you honestly how far you are from a strong standard.
 
 ## 20. External validation and "human versus human"
 

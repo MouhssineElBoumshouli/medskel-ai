@@ -10,6 +10,12 @@ not fit in 4 GB of GPU memory. So we:
 The overlap matters: near a tile border the network sees less context, so its
 prediction there is weaker. Averaging hides the seams.
 
+Optional "flips" (test-time augmentation, TTA): predict the image four times
+(as it is, mirrored left-right, mirrored up-down, both), mirror each answer
+back, and average the four probability maps. A vessel is still a vessel in a
+mirror, so the four answers should agree; averaging removes some random error.
+It costs 4x the time and needs no retraining.
+
 Command line:
     python -m medskel_ai.predict --image some_retina.png --out outputs/prediction
 """
@@ -25,23 +31,23 @@ import torch
 from PIL import Image
 
 from .data import load_image
-from .model import UNet
+from .model import build_model
 
 DEFAULT_CHECKPOINT = "runs/unet_fives/best.pt"
 
 
-def load_model(checkpoint: str | Path = DEFAULT_CHECKPOINT, device: str | torch.device | None = None):
-    """Load a trained U-Net. Returns (model, device, threshold).
+def load_model(checkpoint: str | Path = DEFAULT_CHECKPOINT, device: str | torch.device | None = None, flips: bool = False):
+    """Load a trained model. Returns (model, device, threshold).
 
-    The threshold comes from threshold.json next to the checkpoint (chosen on
-    validation images). If that file does not exist yet we fall back to 0.5.
+    The threshold comes from threshold.json (or threshold_flips.json) next to
+    the checkpoint. It was chosen on validation images. Fallback: 0.5.
     """
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     saved = torch.load(checkpoint, map_location=device, weights_only=True)
-    model = UNet(base=saved["base"]).to(device)
+    model = build_model(saved.get("arch", "plain"), saved.get("base", 32), pretrained=False).to(device)
     model.load_state_dict(saved["model"])
     model.eval()  # batch norm now uses its stored averages instead of batch statistics
-    threshold_file = Path(checkpoint).parent / "threshold.json"
+    threshold_file = Path(checkpoint).parent / ("threshold_flips.json" if flips else "threshold.json")
     threshold = json.loads(threshold_file.read_text())["threshold"] if threshold_file.exists() else 0.5
     return model, device, threshold
 
@@ -54,33 +60,13 @@ def _tile_starts(length: int, tile: int, stride: int) -> list[int]:
     return starts
 
 
-@torch.no_grad()
-def predict_probability(
-    model: torch.nn.Module,
-    image: np.ndarray,
-    device: torch.device,
-    tile: int = 512,
-    overlap: int = 64,
-    batch_size: int = 4,
-) -> np.ndarray:
-    """Vessel probability for every pixel of one photograph.
-
-    image : uint8 [H, W, 3] (R, G, B)
-    return: float32 [H, W], values 0..1
-    """
-    height, width = image.shape[:2]
-    x = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0  # [3, H, W]
-    # If the image is smaller than one tile, pad it with black on the right/bottom.
-    pad_h, pad_w = max(tile - height, 0), max(tile - width, 0)
-    if pad_h or pad_w:
-        x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))
-    padded_h, padded_w = x.shape[1:]
-
+def _predict_tiled(model, x: torch.Tensor, device, tile: int, overlap: int, batch_size: int) -> torch.Tensor:
+    """x: [3, H, W] float tensor on the CPU, H and W >= tile. Returns probabilities [H, W] on the device."""
+    height, width = x.shape[1:]
     stride = tile - overlap
-    positions = [(y, x0) for y in _tile_starts(padded_h, tile, stride) for x0 in _tile_starts(padded_w, tile, stride)]
-    prob_sum = torch.zeros(padded_h, padded_w, device=device)  # sum of probabilities
-    hits = torch.zeros(padded_h, padded_w, device=device)  # how many tiles covered each pixel
-
+    positions = [(y, x0) for y in _tile_starts(height, tile, stride) for x0 in _tile_starts(width, tile, stride)]
+    prob_sum = torch.zeros(height, width, device=device)  # sum of probabilities
+    hits = torch.zeros(height, width, device=device)  # how many tiles covered each pixel
     use_amp = device.type == "cuda"
     for start in range(0, len(positions), batch_size):
         chunk = positions[start : start + batch_size]
@@ -91,8 +77,43 @@ def predict_probability(
         for (y, x0), p in zip(chunk, probs):
             prob_sum[y : y + tile, x0 : x0 + tile] += p
             hits[y : y + tile, x0 : x0 + tile] += 1
-    prob = prob_sum / hits  # average where tiles overlap
-    return prob[:height, :width].cpu().numpy()
+    return prob_sum / hits  # average where tiles overlap
+
+
+@torch.no_grad()
+def predict_probability(
+    model: torch.nn.Module,
+    image: np.ndarray,
+    device: torch.device,
+    tile: int = 512,
+    overlap: int = 64,
+    batch_size: int = 4,
+    flips: bool = False,
+    as_tensor: bool = False,
+):
+    """Vessel probability for every pixel of one photograph.
+
+    image : uint8 [H, W, 3] (R, G, B)
+    flips : average over the 4 mirror versions of the image (slower, see top of file)
+    return: float32 [H, W], values 0..1 (numpy array, or a tensor on the device if as_tensor=True)
+    """
+    height, width = image.shape[:2]
+    x = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0  # [3, H, W]
+    # If the image is smaller than one tile, pad it with black on the right/bottom.
+    pad_h, pad_w = max(tile - height, 0), max(tile - width, 0)
+    if pad_h or pad_w:
+        x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))
+
+    # Each entry lists the axes to mirror: none, left-right (axis 2), up-down (axis 1), both.
+    versions = [(), (2,), (1,), (1, 2)] if flips else [()]
+    total = None
+    for axes in versions:
+        mirrored = torch.flip(x, dims=axes) if axes else x
+        prob = _predict_tiled(model, mirrored, device, tile, overlap, batch_size)
+        prob = torch.flip(prob, dims=[a - 1 for a in axes]) if axes else prob  # mirror the answer back
+        total = prob if total is None else total + prob
+    prob = (total / len(versions))[:height, :width]
+    return prob if as_tensor else prob.cpu().numpy()
 
 
 def make_overlay(image: np.ndarray, mask: np.ndarray, color=(0, 255, 0), strength: float = 0.7) -> np.ndarray:
@@ -108,14 +129,15 @@ def main() -> None:
     parser.add_argument("--image", required=True)
     parser.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT)
     parser.add_argument("--out", default="outputs/prediction")
+    parser.add_argument("--flips", action="store_true", help="average over mirrored versions (4x slower)")
     parser.add_argument("--threshold", type=float, default=None, help="default: the validation-chosen threshold")
     args = parser.parse_args()
 
-    model, device, threshold = load_model(args.checkpoint)
+    model, device, threshold = load_model(args.checkpoint, flips=args.flips)
     if args.threshold is not None:
         threshold = args.threshold
     image = load_image(args.image)
-    prob = predict_probability(model, image, device)
+    prob = predict_probability(model, image, device, flips=args.flips)
     mask = prob >= threshold
 
     out = Path(args.out)

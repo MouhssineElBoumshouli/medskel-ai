@@ -35,3 +35,11 @@ Setup facts (checked on this machine):
 - If a training is interrupted: `python -m medskel_ai.train --minutes 50 --resume` continues from `runs/unet_fives/last.pt`.
 - `--split test` refuses to run if `runs/unet_fives/test_metrics.json` exists.
 - Read logs with tail only (`Get-Content runs\unet_fives\train.log -Tail 5`).
+
+## v2 (branch feature/v2-validation) - session stopped early by usage limit, 2026-11-14
+
+Done and committed: topology.py (clDice, thin-vessel recall), flips in predict.py, bootstrap CIs + new evaluate.py (--run, --flips), soft clDice loss + --arch resnet34 in train.py, chase.py, scripts/worst_cases.py, 34 tests pass.
+Running when the session stopped: baseline validation eval without and with flips -> runs/unet_fives/val_metrics.json, val_flips_metrics.json (read the RESULT line: Get-Content runs\unet_fives\eval_val_flips.log -Tail 1).
+BLOCKED: CHASE_DB1 download (Kingston site has a bot check). Owner must download CHASEDB1.zip by hand and unzip into C:\data\CHASEDB1\images.
+Not started: worst-case figures (python scripts/worst_cases.py train/174_D test/122_G test/123_G), E2 (train --minutes 150 --out runs/e2_long), E3 (train --minutes 50 --cldice-weight 0.5 --out runs/e3_cldice), E4, pretrained baseline (needs pip install torchvision for cu126 + segmentation-models-pytorch), CHASE eval, final test, report/explanation update, PR, demo redesign, HF Space.
+Nothing in v2 has touched the FIVES test set yet.

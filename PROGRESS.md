@@ -25,7 +25,11 @@ Setup facts (checked on this machine):
 
 - `demo.ipynb` still shows version 1 (baseline model). Not updated in v2.
 - train/174_D (wrong mask) is still in the validation set, on purpose, so all experiments share one validation set. Remove it before any new round of experiments.
-- Next research step (not approved yet): M5, mask -> skeleton (thinning and medskel) -> measurements.
+- M5 measurement study: code written on branch `feature/measurements` (stacked on v2). See docs/12_MORPHOMETRY.md.
+  - [x] src/medskel_ai/morphometry.py, src/medskel_ai/study.py, tests/test_morphometry.py (16 pass with the medskel clone; synthetic data only)
+  - [x] Found and worked around a width bug in the original MedSkel code (documented in docs/12)
+  - [ ] Run on the laptop: `python -m medskel_ai.study all` (needs ../medskel clone at 1a838a8 and `pip install -e ".[morphometry]"`)
+  - [ ] Commit results/morphometry/ and write the real numbers into report.md
 - Ideas for thin vessels, untested: width-weighted loss, training at higher zoom, several seeds.
 
 ## Notes

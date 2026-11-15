@@ -100,3 +100,22 @@ Do not push datasets, patient data, secrets, large checkpoints, downloaded model
 ## For AI agents
 
 Start with [`CLAUDE.md`](CLAUDE.md), [`PROGRESS.md`](PROGRESS.md) and [`docs/00_START_HERE.md`](docs/00_START_HERE.md). Inspect actual code and paper sources before choosing an approach. Keep explanations simple enough that the student can defend the CNN architecture and mathematics to the professor.
+
+
+## Measurement study (M5): mask -> skeleton -> measurements
+
+Turns the CNN masks into vessel measurements with two skeleton methods (thinning and the
+original MedSkel), then compares them with human masks and between disease groups.
+Details and honest notes: `docs/12_MORPHOMETRY.md`.
+
+```powershell
+# once: the original MedSkel code next to this folder, at the commit our docs quote
+git clone https://github.com/MouhssineElBoumshouli/medskel ..\medskel
+git -C ..\medskel checkout 1a838a8
+.\.venv\Scripts\python.exe -m pip install -e ".[morphometry]"
+
+# run everything (can be stopped and restarted; finished work is kept)
+.\.venv\Scripts\python.exe -m medskel_ai.study all
+```
+
+Results: `results/morphometry/summary.md` (tables), `analysis.json`, and two figures.

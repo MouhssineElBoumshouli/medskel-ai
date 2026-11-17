@@ -156,3 +156,53 @@ def test_agreement_study_on_identical_masks_is_zero():
             r.update({m: twin[m] for m in mm.ALL_MEASURES})
     out = study.agreement_study(rows, "fives_test", ["expert"], clusters_key=None)
     assert out["pairs"]["cnn_vs_expert"]["thinning"]["total_length"]["median"] == 0
+
+
+# ---- app helpers --------------------------------------------------------------
+
+def test_percentile_of():
+    assert mm.percentile_of(5, [1, 2, 3, 4]) == 100
+    assert mm.percentile_of(0, [1, 2, 3, 4]) == 0
+    assert mm.percentile_of(2, [1, 2, 3, 4]) == pytest.approx(37.5)  # one below, one tie counted half
+    assert np.isnan(mm.percentile_of(float("nan"), [1, 2]))
+
+
+@needs_upstream
+def test_measure_medskel_matches_measure_and_draws_on_the_vessel():
+    mask = tube(length=300, radius=6)
+    row, skeleton = mm.measure_medskel(mask)
+    ref = mm.measure(mask, "medskel")
+    for key in mm.ALL_MEASURES:
+        assert row[key] == pytest.approx(ref[key], nan_ok=True)
+    photo = np.full(mask.shape + (3,), 200, np.uint8)
+    drawn = mm.draw_centre_lines(photo, skeleton, color=(255, 0, 0))
+    red = (drawn[..., 0] == 255) & (drawn[..., 1] == 0)
+    rows, cols = np.where(red)
+    assert red.any() and abs(rows.mean() - mask.shape[0] / 2) < 2  # the line runs along the middle of the tube
+    assert cols.max() - cols.min() > 250
+
+
+def test_report_card_table_and_csv():
+    from medskel_ai import report_card as rc
+
+    values = {m: [float(i) for i in range(1, 101)] for m in mm.ALL_MEASURES}
+    reference = {"groups": {g: {"name": g, "n": 100, "values": values} for g in "NADG"}}
+    measures = {m: 3.0 for m in mm.ALL_MEASURES}
+    rows = rc.table_rows(measures, reference)
+    assert rows[0]["compare"].startswith("lower than 98% of healthy eyes")  # 2.5th percentile
+    assert "outside the usual healthy range" in rows[0]["compare"]
+    text = rc.markdown_table(measures, reference, comparable=True)
+    assert "not a diagnosis" in text and "Tortuosity" not in text
+    assert "No comparison" in rc.markdown_table(measures, reference, comparable=False)
+    assert rc.csv_text(measures, reference).splitlines()[0].startswith("measure,value")
+
+
+def test_reference_file_matches_the_study_results():
+    """The shipped reference must be the CNN + MedSkel test-set numbers (n = 50 normal eyes)."""
+    from medskel_ai import report_card as rc
+
+    ref = rc.load_reference(study.REFERENCE)
+    if ref is None:
+        pytest.skip("results/morphometry/reference_cnn_medskel.json not present")
+    assert ref["groups"]["N"]["n"] == 50
+    assert np.median(ref["groups"]["N"]["values"]["vessel_density"]) == pytest.approx(0.1226, abs=5e-4)

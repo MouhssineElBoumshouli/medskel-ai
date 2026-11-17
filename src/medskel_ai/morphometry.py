@@ -216,6 +216,47 @@ def measure(mask: np.ndarray, method: str, fov: np.ndarray | None = None, repo_p
     return row
 
 
+def measure_medskel(mask: np.ndarray, fov: np.ndarray | None = None, repo_path=None):
+    """For the app: MedSkel measurements AND the skeleton itself (to draw the centre lines).
+
+    Same numbers as `measure(mask, "medskel", fov)`, computed once.
+    """
+    _, _, metrics = import_upstream(repo_path)
+    mask = np.asarray(mask, dtype=bool)
+    row = {"vessel_density": vessel_density(mask, fov), "fractal_dimension": fractal_dimension(mask)}
+    if not mask.any():
+        row.update({"total_length": 0.0, "n_bifurcations": 0.0, "median_calibre": float("nan"), "median_tortuosity": float("nan")})
+        return row, None
+    skeleton = skeleton_of(mask, "medskel", repo_path)
+    summary = metrics.vessel_summary(skeleton, mask)
+    summary["median_calibre"] = medskel_median_calibre(skeleton, mask)
+    row.update({k: float(summary[k]) for k in SKELETON_MEASURES})
+    return row, skeleton
+
+
+def draw_centre_lines(image: np.ndarray, skeleton, color=(255, 60, 60), thickness: int = 2, dim: float = 0.55) -> np.ndarray:
+    """Darken the photo a little and draw the MedSkel centre lines on it."""
+    import cv2
+
+    out = (np.asarray(image, dtype=np.float32) * dim).astype(np.uint8)
+    out = np.ascontiguousarray(out)
+    if skeleton is None:
+        return out
+    for poly in skeleton.polylines():
+        pts = np.round(np.asarray(poly)).astype(np.int32).reshape(-1, 1, 2)  # (x, y) pixel coordinates
+        if len(pts) >= 2:
+            cv2.polylines(out, [pts], isClosed=False, color=color, thickness=thickness, lineType=cv2.LINE_AA)
+    return out
+
+
+def percentile_of(value: float, reference: list[float]) -> float:
+    """Share (0-100) of reference values that are below `value` (ties count half)."""
+    ref = np.asarray([r for r in reference if np.isfinite(r)], dtype=float)
+    if not np.isfinite(value) or len(ref) == 0:
+        return float("nan")
+    return float(100.0 * (np.sum(ref < value) + 0.5 * np.sum(ref == value)) / len(ref))
+
+
 def relative_difference(a: float, b: float) -> float:
     """|a - b| / mean(a, b). Same definition as the original MedSkel inter-observer experiment.
 

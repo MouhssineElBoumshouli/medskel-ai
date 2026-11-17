@@ -30,6 +30,9 @@ Setup facts (checked on this machine):
   - [x] Found and worked around a width bug in the original MedSkel code (documented in docs/12)
   - [x] Run on the laptop (2026-11-17): 1081 masks measured; human-vs-human length check reproduces 0.093 / 0.032
   - [x] results/morphometry/ committed; report.md section 6 written with the real numbers
+- App with measurements (branch feature/measurements, PR #8): after the vessels, the app draws MedSkel centre lines, measures 5 values and compares them with FIVES test eyes measured the same way (results/morphometry/reference_cnn_medskel.json). Smoke-tested in the cloud with a fake model only.
+  - [ ] Owner tests the app on the laptop (git pull, then app.py) and sends a screenshot
+- Still open: the model over-marks vessels on CHASE_DB1 (needs more training work, after the class).
 - Ideas for thin vessels, untested: width-weighted loss, training at higher zoom, several seeds.
 
 ## Notes

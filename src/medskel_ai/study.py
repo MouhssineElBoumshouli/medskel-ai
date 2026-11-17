@@ -508,6 +508,28 @@ def figures(rows: list[dict], analysis: dict) -> None:
         plt.close(fig)
 
 
+REFERENCE = OUT_DIR / "reference_cnn_medskel.json"
+
+
+def build_reference(rows: list[dict]) -> dict:
+    """Reference values for the app: FIVES TEST images, CNN masks, MedSkel centre lines, per group.
+
+    The app measures a CNN mask with MedSkel, so its reference must be made the
+    same way (expert masks differ from CNN masks by ~6% in density). Test images
+    only, because training images were seen by the CNN.
+    """
+    rows = [r for r in rows if r["dataset"] == "fives_test" and r["source"] == "cnn" and r["method"] == "medskel"]
+    keep = _deduplicate({r["image_id"] for r in rows})
+    rows = [r for r in rows if r["image_id"] in keep]
+    groups = {}
+    for g in GROUPS:
+        members = [r for r in rows if r["group"] == g]
+        groups[g] = {"name": GROUP_NAMES[g], "n": len(members),
+                     "values": {m: sorted(float(r[m]) for r in members if np.isfinite(r[m])) for m in mm.ALL_MEASURES}}
+    return {"description": "FIVES test images, CNN masks (final U-Net, flips, threshold 0.30), MedSkel epsilon 4, pixels at 2048 px scale",
+            "groups": groups}
+
+
 def step_analyze(args) -> None:
     rows = read_measurements()
     if not rows:
@@ -535,6 +557,8 @@ def step_analyze(args) -> None:
     (OUT_DIR / "analysis.json").write_text(json.dumps(analysis, indent=1))
     write_summary(analysis, OUT_DIR / "summary.md")
     figures(rows, analysis)
+    if any(r["dataset"] == "fives_test" and r["source"] == "cnn" for r in rows):
+        REFERENCE.write_text(json.dumps(build_reference(rows), indent=1))
     print(f"analyze: wrote {OUT_DIR / 'summary.md'}, analysis.json and figures", flush=True)
 
 

@@ -1,4 +1,4 @@
-"""MedSkel AI demo: upload a retina photograph, see the predicted vessels.
+"""MedSkel AI demo: upload a retina photograph, see the vessels, their centre lines and measurements.
 
     .venv\\Scripts\\python.exe app.py        then open http://127.0.0.1:7860
 
@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import gradio as gr
@@ -21,8 +23,10 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))  # lets the Space find medskel_ai without installing it
 
+from medskel_ai import morphometry as mm
 from medskel_ai.data import resize_image_bilinear, resize_mask_nearest
 from medskel_ai.predict import load_model, make_overlay, predict_probability
+from medskel_ai.report_card import csv_text, load_reference, markdown_table
 
 HERE = Path(__file__).parent
 TRAIN_SIZE = 2048  # FIVES photographs are 2048 x 2048; the model learned vessels at that scale
@@ -63,6 +67,12 @@ def get_model(name: str):
 
 
 _, device, THRESHOLD_PLAIN, THRESHOLD_FLIPS = get_model(OURS)
+REFERENCE = load_reference(HERE / "results" / "morphometry" / "reference_cnn_medskel.json")
+try:  # the measurement step needs the original MedSkel code (a clone next to this folder)
+    mm.import_upstream()
+    MEASURE_ERROR = None
+except FileNotFoundError as error:
+    MEASURE_ERROR = str(error)
 ABOUT_FILE = HERE / "ABOUT.md"
 ABOUT = ABOUT_FILE.read_text(encoding="utf-8") if ABOUT_FILE.exists() else "Results table not found."
 
@@ -89,15 +99,44 @@ def segment(image: np.ndarray | None, threshold: float, flips: bool, match_scale
         scale = TRAIN_SIZE / max(height, width)
         work = resize_image_bilinear(image, round(width * scale), round(height * scale))
     prob = predict_probability(model, work, device, flips=flips, batch_size=4 if ON_GPU else 1)  # tiles + stitching
-    mask = (prob >= threshold).astype(np.uint8)
-    if work is not image:
-        mask = resize_mask_nearest(mask, width, height)  # masks: nearest neighbour only
+    work_mask = (prob >= threshold).astype(np.uint8)
+    mask = resize_mask_nearest(work_mask, width, height) if work is not image else work_mask  # masks: nearest neighbour only
     overlay = make_overlay(image, mask, color=VESSEL_COLOR, strength=0.85)
     info = (
         f"**Vessel pixels: {mask.mean() * 100:.2f}%** of the image · threshold {threshold:.2f} · "
         f"{'4 mirrored passes' if flips else 'single pass'} · running on {device.type.upper()}"
     )
-    return (image, overlay), mask * 255, info
+    # Measurements use the mask at the training scale, like the reference eyes.
+    # The reference was made with our U-Net, 4 passes, default threshold; other settings make it less comparable.
+    comparable = (max(work.shape[:2]) == TRAIN_SIZE and model_name == OURS)
+    state = {"work": work, "work_mask": work_mask.astype(bool), "size": (width, height), "comparable": comparable,
+             "settings_note": "" if (flips and abs(threshold - THRESHOLD_FLIPS) < 1e-6) else
+             "Note: the reference eyes were made with 4 mirrored passes and the default threshold; your settings differ, so compare with care."}
+    return (image, overlay), mask * 255, info, state
+
+
+def measure(state):
+    """Second step: MedSkel centre lines + measurements + comparison with FIVES eyes."""
+    if not state:
+        raise gr.Error("Find the vessels first.")
+    if MEASURE_ERROR:
+        return None, "**Measurements are not available:** " + MEASURE_ERROR.replace("\n", "  \n"), None
+    start = time.perf_counter()
+    from medskel_ai.chase import field_of_view
+
+    work, work_mask = state["work"], state["work_mask"]
+    measures, skeleton = mm.measure_medskel(work_mask, fov=field_of_view(work))
+    lines = mm.draw_centre_lines(work, skeleton, thickness=3)
+    width, height = state["size"]
+    if lines.shape[:2] != (height, width):
+        lines = resize_image_bilinear(lines, width, height)
+    table = markdown_table(measures, REFERENCE, state["comparable"])
+    if state["settings_note"] and state["comparable"]:
+        table += "\n\n" + state["settings_note"]
+    table += f"\n\n<small>Measured in {time.perf_counter() - start:.1f} s.</small>"
+    path = Path(tempfile.mkdtemp()) / "medskel_measurements.csv"
+    path.write_text(csv_text(measures, REFERENCE if state["comparable"] else None), encoding="utf-8")
+    return lines, table, str(path)
 
 
 def default_threshold(flips: bool, model_name: str = OURS) -> float:
@@ -115,7 +154,7 @@ THEME = gr.themes.Soft(primary_hue="teal", neutral_hue="slate")
 
 with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
     gr.Markdown(
-        "# MedSkel AI\nRetinal blood-vessel segmentation with a small U-Net trained from scratch on the FIVES dataset.",
+        "# MedSkel AI\nFinds the blood vessels in a retina photograph (U-Net), draws their centre lines (MedSkel) and measures them.",
         elem_id="title",
     )
     with gr.Tabs():
@@ -127,7 +166,7 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
                     flips = gr.Checkbox(value=ON_GPU, label="Higher quality: average 4 mirrored passes", info="About 4x slower. Recommended on a GPU.")
                     match_scale = gr.Checkbox(value=True, label="Resize to the training scale (longest side 2048 px)")
                     model_name = gr.Dropdown(list(MODEL_DIRS), value=OURS, label="Model", visible=len(MODEL_DIRS) > 1)
-                    run = gr.Button("Find the vessels", variant="primary")
+                    run = gr.Button("Find and measure the vessels", variant="primary")
                     examples = example_images()
                     if examples:
                         gr.Examples(examples=examples, inputs=photo, label="Example photographs (FIVES test images)", cache_examples=False)
@@ -141,11 +180,21 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
                     info = gr.Markdown()
                     with gr.Accordion("Predicted mask (black and white)", open=False):
                         mask_out = gr.Image(label="Predicted mask", height=420)
+            gr.Markdown("### Measurements")
+            with gr.Row(equal_height=False):
+                with gr.Column(scale=4, min_width=300):
+                    lines_out = gr.Image(label="Centre lines found by MedSkel (red)", height=330)
+                with gr.Column(scale=7, min_width=420):
+                    table_out = gr.Markdown("Upload a photo and press the button. The measurements appear here a few seconds after the vessels.")
+                    csv_out = gr.File(label="Download the measurements (CSV)")
+            state = gr.State()
             gr.Markdown("Research prototype for a university class. **Not a medical device. No diagnosis.**", elem_id="note")
         with gr.Tab("About"):
             gr.Markdown(ABOUT)
 
-    run.click(segment, inputs=[photo, threshold, flips, match_scale, model_name], outputs=[slider, mask_out, info])
+    run.click(segment, inputs=[photo, threshold, flips, match_scale, model_name], outputs=[slider, mask_out, info, state]).then(
+        measure, inputs=state, outputs=[lines_out, table_out, csv_out]
+    )
     flips.change(default_threshold, inputs=[flips, model_name], outputs=threshold)
     model_name.change(default_threshold, inputs=[flips, model_name], outputs=threshold)
 

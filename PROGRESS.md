@@ -1,37 +1,34 @@
-﻿# PROGRESS - resume file for a new session
+# PROGRESS - resume file for a new session
 
-Branch: `feature/unet-fives`. Scope: M1-M4 of `docs/09`. Issue #3. Never merge. Read `CLAUDE.md` first.
+Read `CLAUDE.md` first. Never merge. Version 1 = PR #4 (merged by the owner). Version 2 = branch `feature/v2-validation`.
 
 Setup facts (checked on this machine):
 
-- FIVES at `C:\data\FIVES`: `train|test / Original|Ground truth / <n>_<A|D|G|N>.png`, 600 + 200 pairs.
-- `.venv` = Python 3.11, torch 2.14.1+cu126, CUDA works. GPU: RTX 3050 Laptop 4 GB.
-- Run output is in `runs/unet_fives/` (git-ignored): `best.pt`, logs, `test_examples/` figures.
-- Small result files (numbers and one curve plot) are copied to `results/` (tracked).
+- FIVES at `C:\data\FIVES` (600 train + 200 test pairs). CHASE_DB1 at `C:\data\CHASEDB1\images` (28 images, 56 masks; downloaded by hand by the owner, the site blocks scripts).
+- `.venv` = Python 3.11, torch 2.14.1+cu126, torchvision 0.29.1+cu126, segmentation-models-pytorch 0.6.0, scikit-image, scipy, gradio 6.32. GPU: RTX 3050 Laptop 4 GB.
+- Run folders (git-ignored): `runs/unet_fives` (v1 baseline), `runs/e3_cldice`, `runs/e2_long` (FINAL plain U-Net), `runs/pretrained_r34` (comparison). Numbers are copied to `results/` and `results/v2/`.
 
-## Steps
+## Version 2 - all done
 
-- [x] 1. Inspect repo and FIVES folder
-- [x] 2. venv + CUDA PyTorch verified
-- [x] 3. Code: `src/medskel_ai/{data,model,train,evaluate,predict}.py`, `app.py`
-- [x] 4. Tests pass (`pytest`, 22 passed)
-- [x] 5. Data audit -> `results/data_audit.json`, `results/split_seed42.json` (510 train / 88 val, 2 empty masks excluded, identical photos kept together)
-- [x] 6. Training: 38 epochs, 51.2 min, best validation Dice 0.878 (fixed crops) at epoch 32
-- [x] 7. Threshold on validation: 0.40 (whole-image validation Dice 0.899)
-- [x] 8. Test evaluation done ONCE: mean Dice 0.875 over 200 images. Do not run again.
-- [x] 9. `demo.ipynb` executed (pictures stripped from the committed copy; full copy in `outputs/`)
-- [x] 10. `docs/explanation.md`, `report.md`
-- [x] 11. README, tests, push, PR opened (not merged)
+- [x] 1. Weakness measured (validation, baseline): clDice 0.905, thin-vessel recall 0.459.
+- [x] 2. E1 flips: kept. E2 150 min: kept. E3 soft clDice loss: worse, dropped. E4 = E2 + flips = final (val Dice 0.910, threshold 0.30).
+- [x] 3. Pretrained ResNet34 U-Net (150 min): val Dice 0.924 with flips, threshold 0.40.
+- [x] 4. CHASE_DB1 external: final 0.766, pretrained 0.770, baseline 0.768 vs observer 1; human observer 2 vs 1 = 0.777.
+- [x] 5. Bootstrap 95% intervals everywhere (children resampled on CHASE).
+- [x] 6. Worst images viewed: train/174_D = mismatched expert mask; test/122_G, 123_G = dark blurred photos.
+- [x] 7. FIVES test, once per final model: plain 0.889, pretrained 0.907. DO NOT RUN TEST AGAIN (the script refuses).
+- [x] 8. report.md, docs/explanation.md (Part 2), README, ABOUT.md, 34 tests pass, PR opened.
+- [x] 9. app.py redesigned (Gradio Blocks, slider, About tab, model selector). Local app works.
+- [ ] Hugging Face Space: BLOCKED - Hugging Face asks for a paid PRO plan for Gradio Spaces. Nothing was created. `space/` + `scripts/build_space.ps1` are ready.
 
-## Open points for a later session
+## Open points
 
-- Look at the worst images by eye (`test/122_G`, `test/123_G`, `train/174_D`) to see if the photo or the label is the problem.
-- Repeat training with other seeds for error bars.
-- M5/M6 (geometry, CHASE_DB1) are NOT approved yet.
-- M4 asked for a thinning skeleton view and slides; these were not part of the approved task list and are not done.
+- `demo.ipynb` still shows version 1 (baseline model). Not updated in v2.
+- train/174_D (wrong mask) is still in the validation set, on purpose, so all experiments share one validation set. Remove it before any new round of experiments.
+- Next research step (not approved yet): M5, mask -> skeleton (thinning and medskel) -> measurements.
+- Ideas for thin vessels, untested: width-weighted loss, training at higher zoom, several seeds.
 
 ## Notes
 
-- If a training is interrupted: `python -m medskel_ai.train --minutes 50 --resume` continues from `runs/unet_fives/last.pt`.
-- `--split test` refuses to run if `runs/unet_fives/test_metrics.json` exists.
-- Read logs with tail only (`Get-Content runs\unet_fives\train.log -Tail 5`).
+- Compare experiments: `python scripts/compare.py unet_fives unet_fives:flips e3_cldice e2_long e2_long:flips pretrained_r34 pretrained_r34:flips`
+- Read logs with tail only. Interrupted training: add `--resume`.

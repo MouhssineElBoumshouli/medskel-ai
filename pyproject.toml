@@ -8,11 +8,13 @@ version = "0.1.0"
 description = "A small, readable U-Net for retinal vessel segmentation on FIVES (university project)."
 requires-python = ">=3.11"
 # PyTorch is NOT listed here on purpose: install the CUDA build first (see README).
-dependencies = ["numpy", "pillow", "matplotlib"]
+dependencies = ["numpy", "pillow", "matplotlib", "scipy", "scikit-image"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
 demo = ["gradio", "nbconvert", "ipykernel", "nbformat"]
+# Only for the comparison model. Install the CUDA build of torchvision first (see README).
+pretrained = ["segmentation-models-pytorch"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

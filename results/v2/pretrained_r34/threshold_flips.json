@@ -1,0 +1,6 @@
+{
+ "threshold": 0.4,
+ "chosen_on": "validation",
+ "flips": true,
+ "mean_val_dice": 0.9237429011978207
+}

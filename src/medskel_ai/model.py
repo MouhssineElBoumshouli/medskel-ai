@@ -114,6 +114,36 @@ class UNet(nn.Module):
         return self.head(d1)  #                        [B, 1, H, W] logits
 
 
+class PretrainedUNet(nn.Module):
+    """Comparison model, NOT the model we explain: a U-Net whose encoder is a ResNet-34
+    that was already trained on ImageNet (1.2 million everyday photographs).
+
+    It comes from the library segmentation_models_pytorch. We use it only to answer:
+    "how far is our small from-scratch U-Net from a strong standard baseline?"
+    """
+
+    def __init__(self, pretrained: bool = True):
+        super().__init__()
+        import segmentation_models_pytorch as smp
+
+        self.net = smp.Unet("resnet34", encoder_weights="imagenet" if pretrained else None, in_channels=3, classes=1)
+        # The ImageNet encoder expects inputs normalised with these channel means / spreads.
+        self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net((x - self.mean) / self.std)
+
+
+def build_model(arch: str = "plain", base: int = 32, pretrained: bool = True) -> nn.Module:
+    """'plain' = our own U-Net above. 'resnet34' = the pretrained comparison model."""
+    if arch == "plain":
+        return UNet(base=base)
+    if arch == "resnet34":
+        return PretrainedUNet(pretrained=pretrained)
+    raise ValueError(f"unknown architecture '{arch}'")
+
+
 def count_parameters(model: nn.Module) -> int:
     """Number of trainable numbers (weights and biases) in the model."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)

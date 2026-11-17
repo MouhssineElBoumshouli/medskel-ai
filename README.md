@@ -2,19 +2,24 @@
 
 **Research-first retinal blood vessel segmentation and measurement.** The immediate deliverable is a small, understandable **PyTorch U-Net** for a university CNN project. The long-term goal is to test whether retinal vessel geometry can be measured accurately and reproducibly enough for research workflows.
 
-> **Current status (14 November 2026): a U-Net trained on real FIVES expert masks, evaluated once on the official test set, with a local demo.** Research prototype for a class project. No clinical validation. Not a medical device.
+> **Current status (November 2026): a U-Net trained on real FIVES expert masks, validated with connectivity and thin-vessel metrics, tested externally on CHASE_DB1 with a human-agreement comparison, with a local demo.** Research prototype for a class project. No clinical validation. Not a medical device.
 
-## Result of the first real run
+## Results
 
-Plain U-Net, 7,849,601 parameters, trained 51 minutes on an RTX 3050 (4 GB) on 510 FIVES training images (random 512 x 512 crops at full resolution). Threshold 0.40 chosen on 88 validation images. Official test set (200 images) evaluated **once**:
+Our model: a plain U-Net, 7,849,601 parameters, trained from scratch for 150 minutes on an RTX 3050 (4 GB) on 510 FIVES training images (random 512 x 512 crops at full resolution). Predictions are averaged over 4 mirrored passes. Threshold 0.30 chosen on 88 validation images. Brackets: 95% bootstrap interval.
 
-| Dice | IoU | Precision | Recall | Specificity | Accuracy |
-| --- | --- | --- | --- | --- | --- |
-| **0.875** | 0.791 | 0.909 | 0.856 | 0.993 | 0.986 |
+| Test | Dice | clDice | Sensitivity | Specificity |
+| --- | --- | --- | --- | --- |
+| FIVES official test set, 200 images | **0.889** (0.873 – 0.903) | 0.897 | 0.874 | 0.994 |
+| CHASE_DB1 (external, 28 images, 14 children) vs observer 1 | 0.766 (0.750 – 0.782) | 0.835 | 0.908 | 0.949 |
+| Human observer 2 vs observer 1 on CHASE_DB1 | 0.777 (0.766 – 0.788) | 0.835 | 0.769 | 0.978 |
 
-Mean over images. Median Dice 0.907, worst image 0.031. By group: A 0.908, D 0.876, G 0.828, N 0.887. An all-black prediction already has accuracy 0.929, so accuracy is not a useful score here.
+- Version 1 baseline (pull request #4, 50 minutes of training): FIVES test Dice 0.875.
+- A reference U-Net with an ImageNet-pretrained ResNet34 encoder, same data and time, is better on FIVES (Dice 0.907) and equal on CHASE_DB1 (0.770).
+- **Main weakness:** only 46% of thin-vessel pixels (1 to 4 px wide) are found.
+- Limits: FIVES has 800 images from 573 patients and no patient ids; the FIVES test set was used twice; one training run per setting; the model marks too many vessel pixels on CHASE_DB1; dark, blurred photos fail.
 
-Read these numbers with their limits: FIVES has 800 images from 573 patients and no patient ids, so patient overlap between train, validation and test cannot be ruled out; one run with one seed; no external dataset. Full details in [`report.md`](report.md), raw numbers in [`results/`](results/).
+Full details in [`report.md`](report.md), raw numbers in [`results/`](results/) and [`results/v2/`](results/v2/).
 
 ## Quick start (Windows, PowerShell)
 
@@ -39,10 +44,11 @@ C:\data\FIVES\test\Ground truth\...             200 expert masks
 | Run the tests (synthetic fixtures, no FIVES needed) | `.\.venv\Scripts\python.exe -m pytest` |
 | Print model shapes and parameter count | `.\.venv\Scripts\python.exe -m medskel_ai.model` |
 | Check the data files, write the split | `.\.venv\Scripts\python.exe -m medskel_ai.data` |
-| Train (about 50 minutes on an RTX 3050 4 GB) | `.\.venv\Scripts\python.exe -m medskel_ai.train --minutes 50` |
-| Choose the threshold on validation images | `.\.venv\Scripts\python.exe -m medskel_ai.evaluate --split val` |
-| Final test evaluation (runs **once**) | `.\.venv\Scripts\python.exe -m medskel_ai.evaluate --split test` |
-| Segment one photograph | `.\.venv\Scripts\python.exe -m medskel_ai.predict --image photo.png` |
+| Train the final model (150 minutes on an RTX 3050 4 GB) | `.\.venv\Scripts\python.exe -m medskel_ai.train --minutes 150 --out runs/e2_long` |
+| Choose the threshold on validation images | `.\.venv\Scripts\python.exe -m medskel_ai.evaluate --run runs/e2_long --split val --flips` |
+| Test evaluation (**once** per model) | `.\.venv\Scripts\python.exe -m medskel_ai.evaluate --run runs/e2_long --split test --flips` |
+| External test on CHASE_DB1 (put it in `C:\data\CHASEDB1`) | `.\.venv\Scripts\python.exe -m medskel_ai.chase --run runs/e2_long --flips` |
+| Segment one photograph | `.\.venv\Scripts\python.exe -m medskel_ai.predict --image photo.png --checkpoint runs/e2_long/best.pt --flips` |
 | **Launch the demo** | `.\.venv\Scripts\python.exe app.py` then open http://127.0.0.1:7860 |
 
 Training output (checkpoint, logs, example figures) goes to `runs/unet_fives/`, which Git ignores. Small result files (numbers only) are copied to [`results/`](results/).
@@ -58,7 +64,9 @@ Training output (checkpoint, logs, example figures) goes to `runs/unet_fives/`, 
 | [`src/medskel_ai/data.py`](src/medskel_ai/data.py) | File pairing, split, crops, augmentation, data audit |
 | [`src/medskel_ai/train.py`](src/medskel_ai/train.py) | Loss, training loop, validation |
 | [`src/medskel_ai/evaluate.py`](src/medskel_ai/evaluate.py) | Metrics, threshold choice, test evaluation |
-| [`src/medskel_ai/predict.py`](src/medskel_ai/predict.py) | Whole-image prediction by tiling and stitching |
+| [`src/medskel_ai/predict.py`](src/medskel_ai/predict.py) | Whole-image prediction by tiling and stitching, optional flips |
+| [`src/medskel_ai/topology.py`](src/medskel_ai/topology.py) | clDice and thin-vessel recall |
+| [`src/medskel_ai/chase.py`](src/medskel_ai/chase.py) | External test on CHASE_DB1, model vs human observers |
 | [`PROGRESS.md`](PROGRESS.md) | Step list so a new session can resume |
 
 ## What this repository is
@@ -74,9 +82,10 @@ This is the **dedicated MedSkel AI development repository**. It holds the new CN
 
 ## Not done yet
 
-- No centerlines, widths or lengths (milestone M5), no CHASE_DB1 external test (M6).
+- No centerlines, widths or lengths (milestone M5). CHASE_DB1 was used as an external segmentation test only.
 - No patient-level split: FIVES publishes no patient ids (800 images, 573 patients).
-- One training run with one seed. No comparison against other models.
+- One training run per setting. One comparison model (pretrained ResNet34 U-Net); no comparison with published numbers.
+- No online demo: a free Hugging Face Gradio Space could not be created (the site asked for a paid plan). Files for it are in `space/`.
 
 Do not push datasets, patient data, secrets, large checkpoints, downloaded models, or unverified performance numbers to this repository. See [project boundaries](docs/11_REPOSITORY_BOUNDARIES.md) and [data protocol](docs/04_DATA_AND_EVALUATION.md).
 

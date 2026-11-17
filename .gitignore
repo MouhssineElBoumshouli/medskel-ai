@@ -48,3 +48,7 @@ Thumbs.db
 
 # Temporary logs
 *.log
+
+# Assembled Hugging Face Space (contains weights) and owner-approved example images
+/space_build/
+/space_examples/

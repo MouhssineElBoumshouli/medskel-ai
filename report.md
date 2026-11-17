@@ -213,15 +213,72 @@ So the two worst test images are low-quality photographs on which the model fail
 7. **Bad photographs break the model** (dark, blurred images). There is no quality check that warns the user.
 8. **No field-of-view mask on FIVES**; nominal camera angles for the CHASE scale match; thin-vessel definition depends on resolution.
 9. **We compare with no published numbers.** Protocols differ between papers (splits, field of view, resolution), and we only quote numbers we computed ourselves.
-10. **Segmentation only.** No widths, lengths or branch counts. Nothing here supports a medical statement about a patient. Not a medical device.
+10. **Measurements are in pixels** and only checked against human masks, not against anatomy. They do not transfer to CHASE without adaptation (section 6.2). The disease-group results are associations in one dataset. Nothing here supports a medical statement about a patient. Not a medical device.
 
-## 6. Next step: from mask to measurement
+## 6. From mask to measurement (M5)
 
-The mask is not the goal. The goal of the wider MedSkel project is to *measure* vessels. The planned chain is:
+The mask is not the goal. The goal of the wider MedSkel project is to *measure* vessels:
 
-**photograph → CNN mask (this project) → skeleton / centre lines (the `medskel` geometry project) → vessel length, width and branching in pixels.**
+**photograph → CNN mask → centre lines (thinning, or the original `medskel` geometry) → 6 measurements in pixels.**
 
-clDice already links the two halves: it scores a mask by what happens to its centre lines. The next experiment is to run both a standard pixel thinning and the `medskel` skeleton on the *same* predicted masks and on the expert masks, and to see how the 46% thin-vessel recall changes the measured vessel length. Until that is done, no claim about measurements can be made.
+Measurements: vessel density, fractal dimension, total length, bifurcations, median width, median tortuosity. Code: `src/medskel_ai/morphometry.py` and `study.py`; method and notes: `docs/12_MORPHOMETRY.md`; all numbers: `results/morphometry/summary.md`. Nothing was chosen on the test images: model, threshold (0.30), skeleton settings and measures were fixed before the run.
+
+**Set-up check.** Between the two CHASE observers, total length moves by a median 0.093 (thinning) and 0.032 (MedSkel). These are the same numbers the original `medskel` repository reported, so the pipeline reproduces the earlier result.
+
+**Bug found in the original MedSkel width.** Its branch width keeps radii only at the simplified polyline vertices, mostly the tips (a 12 px straight test vessel gives 1.3 px). The original repository was not edited; here, width is measured the same way for both methods (distance transform along the centre line).
+
+### 6.1 FIVES test: CNN mask vs expert mask (200 images)
+
+Median relative difference |a−b|/mean(a,b); 95% bootstrap interval.
+
+| Measure | Thinning | MedSkel |
+|---|---|---|
+| Vessel density | 0.057 [0.050–0.067] | (same mask) |
+| Total length | 0.068 [0.058–0.087] | 0.063 [0.051–0.077] |
+| Bifurcations | 0.532 [0.500–0.638] | **0.258 [0.214–0.297]** |
+| Median width | 0.178 [0.158–0.190] | **0.133 [0.114–0.158]** |
+
+On FIVES, replacing the expert mask by the CNN mask changes density and length by about 6–7%. With MedSkel centre lines, the bifurcation count moves half as much as with thinning (26% vs 53%), and the width less (13% vs 18%); Wilcoxon p < 0.001 for all four skeleton measures. FIVES has one annotator per image, so there is no human-vs-human baseline here.
+
+### 6.2 CHASE_DB1: CNN vs humans, and human vs human (28 images, 14 children)
+
+| Measure | CNN vs observer 1 (thinning / MedSkel) | Observer 2 vs observer 1 (thinning / MedSkel) |
+|---|---|---|
+| Vessel density | 0.302 | 0.127 |
+| Total length | 0.175 / 0.120 | 0.093 / 0.032 |
+| Bifurcations | 0.143 / 0.230 | 0.216 / 0.122 |
+| Median width | 0.392 / 0.667 | 0.175 / 0.173 |
+
+On the external dataset, the CNN's measurements move **more** than the two humans differ from each other (density 30% vs 13%, width 39–67% vs 17%). This matches section 4: the model over-marks vessels on CHASE (wider, more pixels). So the measurements do **not** transfer to a new camera and population without adaptation. MedSkel reduces the CNN-vs-observer-1 length difference (12% vs 17.5%) but does worse on width and tortuosity.
+
+### 6.3 Disease groups (FIVES, association only)
+
+Expert masks, train + test, thinning (medians; Kruskal-Wallis p < 0.001 for every measure):
+
+| Measure | Normal (200) | AMD (194) | Diabetic retinopathy (199) | Glaucoma (198) |
+|---|---|---|---|---|
+| Vessel density | 0.116 | 0.100 | 0.096 | 0.094 |
+| Fractal dimension | 1.528 | 1.501 | 1.497 | 1.490 |
+| Total length (px) | 30,435 | 26,620 | 23,732 | 25,159 |
+| Bifurcations | 177 | 138 | 142 | 155 |
+
+All three disease groups have lower vessel density, lower fractal dimension, shorter total length and fewer bifurcations than normal eyes (Holm-corrected p < 0.001). CNN masks on the 200 test images show the same pattern.
+
+A logistic regression on the 6 measurements, trained on training images and tested once on test images:
+
+| Centre lines | Test masks | Balanced accuracy (chance 0.25) | AUC healthy vs DR |
+|---|---|---|---|
+| Thinning | expert | 0.488 | 0.818 |
+| Thinning | CNN | 0.449 | 0.842 |
+| MedSkel | expert | 0.457 | 0.748 |
+| MedSkel | CNN | 0.453 | 0.805 |
+
+Shuffled-label control: 0.251 (p ≤ 0.004). The measurements carry real information about the group, and the full chain photo → CNN → measurements works about as well as with expert masks. But the classifier is wrong more than half the time across the 4 groups. **This is an association in one dataset, not a diagnosis.** It may come partly from image quality, lesions hiding vessels, or how annotators drew diseased eyes, not only from the vessels themselves.
+
+### 6.4 Notes
+
+- **Tortuosity is not comparable between methods** (thinning ≈ 1.07 from the pixel staircase, MedSkel ≈ 1.01 from polyline simplification). Do not read it as a biological result.
+- **Speed:** including the measurement step, MedSkel took a median 8 s per 2048 px mask and thinning 51 s (turning a pixel skeleton into a branch graph is slow). The original repository's "66× slower" timed the skeleton alone, so the two numbers measure different things.
 
 ## Reproducing the results
 
@@ -232,6 +289,7 @@ clDice already links the two halves: it scores a mask by what happens to its cen
 .\.venv\Scripts\python.exe -m medskel_ai.evaluate --run runs/e2_long --split test --flips   # once
 .\.venv\Scripts\python.exe -m medskel_ai.chase --run runs/e2_long --flips         # external test
 .\.venv\Scripts\python.exe scripts\compare.py unet_fives unet_fives:flips e3_cldice e2_long e2_long:flips
+.\.venv\Scripts\python.exe -m medskel_ai.study all                                  # measurement study (needs ..\medskel at 1a838a8)
 .\.venv\Scripts\python.exe app.py                                                 # demo
 ```
 

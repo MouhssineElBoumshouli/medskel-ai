@@ -28,8 +28,8 @@ Setup facts (checked on this machine):
 - M5 measurement study: code written on branch `feature/measurements` (stacked on v2). See docs/12_MORPHOMETRY.md.
   - [x] src/medskel_ai/morphometry.py, src/medskel_ai/study.py, tests/test_morphometry.py (16 pass with the medskel clone; synthetic data only)
   - [x] Found and worked around a width bug in the original MedSkel code (documented in docs/12)
-  - [ ] Run on the laptop: `python -m medskel_ai.study all` (needs ../medskel clone at 1a838a8 and `pip install -e ".[morphometry]"`)
-  - [ ] Commit results/morphometry/ and write the real numbers into report.md
+  - [x] Run on the laptop (2026-11-17): 1081 masks measured; human-vs-human length check reproduces 0.093 / 0.032
+  - [x] results/morphometry/ committed; report.md section 6 written with the real numbers
 - Ideas for thin vessels, untested: width-weighted loss, training at higher zoom, several seeds.
 
 ## Notes

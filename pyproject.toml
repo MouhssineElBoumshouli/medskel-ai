@@ -15,6 +15,8 @@ dev = ["pytest"]
 demo = ["gradio", "nbconvert", "ipykernel", "nbformat"]
 # Only for the comparison model. Install the CUDA build of torchvision first (see README).
 pretrained = ["segmentation-models-pytorch"]
+# Measurement study (python -m medskel_ai.study). Also needs a clone of the original medskel repo next to this one.
+morphometry = ["networkx", "opencv-python", "scikit-learn"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

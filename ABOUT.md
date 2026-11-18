@@ -11,6 +11,17 @@ A small **U-Net** (7.85 million parameters, trained from scratch, no pretrained 
 3. Tiles are stitched; overlapping areas are averaged. Optionally the photo is also predicted mirrored (4 passes) and the results are averaged.
 4. Pixels with probability at or above the threshold are called vessel. The default threshold was chosen on validation images.
 
+## The measurements (second half of the project)
+
+After the vessels are found, the **MedSkel** method (from the original MedSkel project) draws their centre lines, and the app measures: vessel density, fractal dimension, total vessel length, branch points and median width, all in pixels. Each value is compared with FIVES test eyes measured exactly the same way (50 healthy eyes, about 50 per disease group).
+
+What we found on FIVES (full details in the report, section 6):
+- When the CNN drawing replaces the expert drawing, MedSkel's branch count changes half as much as the standard thinning method's (26% vs 53%).
+- Eyes with diabetic retinopathy, glaucoma or AMD have lower vessel density, a lower fractal dimension, shorter vessels and fewer branch points than healthy eyes. A simple model using only these numbers guesses the group 45–49% of the time (chance: 25%).
+- On another hospital's photos (CHASE_DB1), the CNN's measurements differ from the doctors' more than two doctors differ from each other.
+
+**These are associations in one dataset. Healthy and diseased eyes overlap a lot. Nothing here is a diagnosis.**
+
 ## Real results
 
 All numbers were computed by us. The value in brackets is a 95% bootstrap confidence interval.

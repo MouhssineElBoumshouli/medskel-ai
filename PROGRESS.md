@@ -25,7 +25,14 @@ Setup facts (checked on this machine):
 
 - `demo.ipynb` still shows version 1 (baseline model). Not updated in v2.
 - train/174_D (wrong mask) is still in the validation set, on purpose, so all experiments share one validation set. Remove it before any new round of experiments.
-- Next research step (not approved yet): M5, mask -> skeleton (thinning and medskel) -> measurements.
+- M5 measurement study: code written on branch `feature/measurements` (stacked on v2). See docs/12_MORPHOMETRY.md.
+  - [x] src/medskel_ai/morphometry.py, src/medskel_ai/study.py, tests/test_morphometry.py (16 pass with the medskel clone; synthetic data only)
+  - [x] Found and worked around a width bug in the original MedSkel code (documented in docs/12)
+  - [x] Run on the laptop (2026-11-17): 1081 masks measured; human-vs-human length check reproduces 0.093 / 0.032
+  - [x] results/morphometry/ committed; report.md section 6 written with the real numbers
+- App with measurements (branch feature/measurements, PR #8): after the vessels, the app draws MedSkel centre lines, measures 5 values and compares them with FIVES test eyes measured the same way (results/morphometry/reference_cnn_medskel.json). Smoke-tested in the cloud with a fake model only.
+  - [x] Owner tested the app with the real model on the laptop (2026-11-18): centre lines + table work, measured in 5.9 s; table layout then widened
+- Still open: the model over-marks vessels on CHASE_DB1 (needs more training work, after the class).
 - Ideas for thin vessels, untested: width-weighted loss, training at higher zoom, several seeds.
 
 ## Notes

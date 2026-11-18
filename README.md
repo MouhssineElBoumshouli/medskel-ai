@@ -66,7 +66,7 @@ C:\data\FIVES\test\Ground truth\...             200 expert masks
 | External test on CHASE_DB1 (put it in `C:\data\CHASEDB1`) | `.\.venv\Scripts\python.exe -m medskel_ai.chase --run runs/e2_long --flips` |
 | Segment one photograph | `.\.venv\Scripts\python.exe -m medskel_ai.predict --image photo.png --checkpoint runs/e2_long/best.pt --flips` |
 | Measurement study (CNN masks → centre lines → statistics; a few hours, resumable) | `.\.venv\Scripts\python.exe -m medskel_ai.study all` |
-| **Launch the demo** (vessels + centre lines + measurements) | `.\.venv\Scripts\python.exe app.py` then open http://127.0.0.1:7860 |
+| **Launch the demo** (vessels + centre lines + measurements) | Double-click **`MedSkel AI.bat`** (opens the browser by itself), or `.\.venv\Scripts\python.exe app.py` then open http://127.0.0.1:7860 |
 
 Training output (checkpoint, logs, example figures) goes to `runs/unet_fives/`, which Git ignores. Small result files (numbers only) are copied to [`results/`](results/).
 

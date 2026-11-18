@@ -213,4 +213,9 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
 
 if __name__ == "__main__":
     fives_dir = os.environ.get("FIVES_DIR", r"C:\data\FIVES")
-    demo.launch(theme=THEME, css=CSS, allowed_paths=[fives_dir] if Path(fives_dir).exists() else None)
+    demo.launch(
+        theme=THEME,
+        css=CSS,
+        allowed_paths=[fives_dir] if Path(fives_dir).exists() else None,
+        inbrowser=os.environ.get("MEDSKEL_OPEN_BROWSER") == "1",  # set by "MedSkel AI.bat": opens the page by itself
+    )

@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))  # lets the Space find me
 from medskel_ai import morphometry as mm
 from medskel_ai.data import resize_image_bilinear, resize_mask_nearest
 from medskel_ai.predict import load_model, make_overlay, predict_probability
-from medskel_ai.report_card import csv_text, load_reference, markdown_table
+from medskel_ai.report_card import csv_text, explanations_markdown, group_chart, load_reference, markdown_table
 
 HERE = Path(__file__).parent
 TRAIN_SIZE = 2048  # FIVES photographs are 2048 x 2048; the model learned vessels at that scale
@@ -120,7 +120,7 @@ def measure(state):
     if not state:
         raise gr.Error("Find the vessels first.")
     if MEASURE_ERROR:
-        return None, "**Measurements are not available:** " + MEASURE_ERROR.replace("\n", "  \n"), None
+        return None, "**Measurements are not available:** " + MEASURE_ERROR.replace("\n", "  \n"), None, None
     start = time.perf_counter()
     from medskel_ai.chase import field_of_view
 
@@ -136,7 +136,8 @@ def measure(state):
     table += f"\n\n<small>Measured in {time.perf_counter() - start:.1f} s.</small>"
     path = Path(tempfile.mkdtemp()) / "medskel_measurements.csv"
     path.write_text(csv_text(measures, REFERENCE if state["comparable"] else None), encoding="utf-8")
-    return lines, table, str(path)
+    chart = group_chart(measures, REFERENCE) if (REFERENCE and state["comparable"]) else None
+    return lines, table, str(path), chart
 
 
 def default_threshold(flips: bool, model_name: str = OURS) -> float:
@@ -200,13 +201,18 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
                 "Upload a photo and press the button. The measurements appear here a few seconds after the vessels.",
                 elem_id="measure-table",
             )
+            with gr.Row(equal_height=False):
+                with gr.Column(scale=3, min_width=360):
+                    chart_out = gr.Plot(label="Where does this eye sit? (FIVES test eyes, measured the same way)")
+                with gr.Column(scale=2, min_width=300):
+                    gr.Markdown(explanations_markdown())
             state = gr.State()
             gr.Markdown("Research prototype for a university class. **Not a medical device. No diagnosis.**", elem_id="note")
         with gr.Tab("About"):
             gr.Markdown(ABOUT)
 
     run.click(segment, inputs=[photo, threshold, flips, match_scale, model_name], outputs=[slider, mask_out, info, state]).then(
-        measure, inputs=state, outputs=[lines_out, table_out, csv_out]
+        measure, inputs=state, outputs=[lines_out, table_out, csv_out, chart_out]
     )
     flips.change(default_threshold, inputs=[flips, model_name], outputs=threshold)
     model_name.change(default_threshold, inputs=[flips, model_name], outputs=threshold)

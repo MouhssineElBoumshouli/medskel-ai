@@ -107,3 +107,75 @@ def csv_text(measures: dict, reference: dict | None) -> str:
     for r in rows:
         writer.writerow([r["key"], r["value"], units[r["key"]], r["healthy_median"], r["percentile"]])
     return out.getvalue()
+
+
+# ----------------------------------------------------------------------------
+# Plain-words explanations and the "where does this eye sit?" chart
+# ----------------------------------------------------------------------------
+
+# What each measure means, and what the measurement study found in FIVES
+# (results/morphometry/summary.md, Q3a expert masks and Q3b CNN masks).
+EXPLANATIONS = {
+    "vessel_density": ("How much of the retina is covered by vessels.",
+                       "In FIVES, eyes with diabetic retinopathy, glaucoma or AMD had **less** vessel area than healthy eyes, on average (clear difference)."),
+    "fractal_dimension": ("How richly the vessel tree branches and fills the space. Higher = a fuller, more detailed tree.",
+                          "All three disease groups had a **simpler** tree than healthy eyes, on average (clear difference)."),
+    "total_length": ("The length of all vessel centre lines added together.",
+                     "All three disease groups had **shorter** vessels in total, on average (clear difference)."),
+    "n_bifurcations": ("How many times the vessels split into two.",
+                       "All three disease groups had **fewer** splits, on average (clear difference)."),
+    "median_calibre": ("The typical vessel width.",
+                       "Only small differences between groups, and **no clear difference** with the AI's drawings. Read it with care."),
+}
+CHART_GROUPS = [("N", "Healthy", "#3a9d6e"), ("D", "Diabetic retinopathy", "#d08a2c"), ("G", "Glaucoma", "#7c6bc4"), ("A", "AMD", "#4a86c5")]
+
+
+def explanations_markdown() -> str:
+    lines = ["#### What the measurements mean"]
+    for key, name, *_ in SHOWN:
+        meaning, finding = EXPLANATIONS[key]
+        lines.append(f"- **{name}**: {meaning} {finding}")
+    lines.append("")
+    lines.append("**How to read the chart:** each bar is the middle half of one group (the line inside is the typical value, "
+                 "the thin lines reach the usual range). The red dot is this eye. The bars **overlap**: a value can be typical "
+                 "of a disease group and still be normal for a healthy eye. That is why these numbers are clues for research, "
+                 "**not a diagnosis**.")
+    return "\n".join(lines)
+
+
+def group_chart(measures: dict, reference: dict):
+    """One row per measure: the 4 groups as horizontal box plots, this eye as a red dot."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(len(SHOWN), 1, figsize=(7.2, 1.55 * len(SHOWN) + 0.4), constrained_layout=True)
+    for ax, (key, name, _, fmt) in zip(np.atleast_1d(axes), SHOWN):
+        data = [reference["groups"][g]["values"].get(key, []) for g, _, _ in CHART_GROUPS]
+        positions = np.arange(len(CHART_GROUPS))[::-1]
+        style = dict(positions=positions, widths=0.6, whis=(5, 95), showfliers=False, patch_artist=True)
+        try:  # Matplotlib >= 3.10
+            box = ax.boxplot(data, orientation="horizontal", **style)
+        except TypeError:  # older Matplotlib
+            box = ax.boxplot(data, vert=False, **style)
+        for patch, (_, _, color) in zip(box["boxes"], CHART_GROUPS):
+            patch.set(facecolor=color, alpha=0.55, edgecolor=color)
+        for element in ("whiskers", "caps", "medians"):
+            for line, color in zip(box[element], [c for _, _, c in CHART_GROUPS for _ in range(1 if element == "medians" else 2)]):
+                line.set(color=color if element != "medians" else "#222222", linewidth=1.4)
+        value = measures.get(key, float("nan"))
+        if np.isfinite(value):
+            ax.axvline(value, color="#d62728", linestyle="--", linewidth=1.2, alpha=0.8)
+            ax.scatter([value] * len(CHART_GROUPS), positions, color="#d62728", s=28, zorder=5)
+            ax.set_title(f"{name}: this eye = {fmt(value)}", fontsize=10, loc="left")
+        else:
+            ax.set_title(f"{name}: not measured", fontsize=10, loc="left")
+        ax.set_yticks(positions, [label for _, label, _ in CHART_GROUPS], fontsize=8)
+        ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda x, _p, f=fmt: f(x)))
+        ax.tick_params(axis="x", labelsize=8)
+        ax.grid(axis="x", alpha=0.25)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+    # (no figure title: the app shows "Where does this eye sit?" as the label)
+    return fig

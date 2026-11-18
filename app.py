@@ -149,6 +149,10 @@ CSS = """
 #title h1 {font-size: 2.0rem; margin-bottom: 0.1rem;}
 #title p {opacity: 0.8; margin-top: 0;}
 #note {font-size: 0.85rem; opacity: 0.75;}
+/* measurement table: numbers never break across lines */
+#measure-table table {width: 100%;}
+#measure-table td:nth-child(2), #measure-table td:nth-child(3), #measure-table td:nth-child(n+5) {white-space: nowrap;}
+#measure-table th {vertical-align: bottom;}
 """
 THEME = gr.themes.Soft(primary_hue="teal", neutral_hue="slate")
 
@@ -182,11 +186,20 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
                         mask_out = gr.Image(label="Predicted mask", height=420)
             gr.Markdown("### Measurements")
             with gr.Row(equal_height=False):
-                with gr.Column(scale=4, min_width=300):
-                    lines_out = gr.Image(label="Centre lines found by MedSkel (red)", height=330)
-                with gr.Column(scale=7, min_width=420):
-                    table_out = gr.Markdown("Upload a photo and press the button. The measurements appear here a few seconds after the vessels.")
+                with gr.Column(scale=1, min_width=300):
+                    lines_out = gr.Image(label="Centre lines found by MedSkel (red)", height=420)
+                with gr.Column(scale=1, min_width=300):
+                    gr.Markdown(
+                        "**How to read the table.** Each value of *this eye* is compared with 50 healthy FIVES eyes "
+                        "that went through exactly the same steps (our U-Net, then MedSkel centre lines). "
+                        "The last three columns show the typical value in each disease group.\n\n"
+                        "All lengths and widths are in pixels at the FIVES scale (2048 px photographs)."
+                    )
                     csv_out = gr.File(label="Download the measurements (CSV)")
+            table_out = gr.Markdown(
+                "Upload a photo and press the button. The measurements appear here a few seconds after the vessels.",
+                elem_id="measure-table",
+            )
             state = gr.State()
             gr.Markdown("Research prototype for a university class. **Not a medical device. No diagnosis.**", elem_id="note")
         with gr.Tab("About"):

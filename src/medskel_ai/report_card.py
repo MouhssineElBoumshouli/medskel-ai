@@ -23,7 +23,7 @@ SHOWN = [
     ("n_bifurcations", "Branch points", "places where a vessel splits", lambda v: f"{v:.0f}"),
     ("median_calibre", "Median vessel width", "pixels", lambda v: f"{v:.1f} px"),
 ]
-OTHER_GROUPS = [("D", "Diabetic retinopathy"), ("G", "Glaucoma"), ("A", "AMD")]
+OTHER_GROUPS = [("D", "Diabetic retinopathy"), ("G", "Glaucoma"), ("A", "AMD")]  # table columns show each group's median
 
 
 def load_reference(path: str | Path) -> dict | None:
@@ -83,7 +83,7 @@ def markdown_table(measures: dict, reference: dict | None, comparable: bool) -> 
         return "\n".join(lines) + f"\n\n{why}"
     n = reference["groups"]["N"]["n"]
     head = ("| Measure | This eye | Healthy eyes: median (middle half) | Compared with healthy eyes | "
-            + " | ".join(f"{label} median" for _, label in OTHER_GROUPS) + " |")
+            + " | ".join(f"{label} (median)" for _, label in OTHER_GROUPS) + " |")
     lines = [head, "|---" * (4 + len(OTHER_GROUPS)) + "|"]
     for r in table_rows(measures, reference):
         lines.append(f"| **{r['name']}**<br><small>{r['meaning']}</small> | **{r['value_text']}** | {r['healthy_text']} | {r['compare']} | "

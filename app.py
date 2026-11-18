@@ -203,7 +203,8 @@ with gr.Blocks(title="MedSkel AI - retinal vessel segmentation") as demo:
             )
             with gr.Row(equal_height=False):
                 with gr.Column(scale=3, min_width=360):
-                    chart_out = gr.Plot(label="Where does this eye sit? (FIVES test eyes, measured the same way)")
+                    gr.Markdown("#### Where does this eye sit?\nFIVES test eyes, measured the same way. Red dot = this eye.")
+                    chart_out = gr.Plot(show_label=False)
                 with gr.Column(scale=2, min_width=300):
                     gr.Markdown(explanations_markdown())
             state = gr.State()

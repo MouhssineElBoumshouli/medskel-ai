@@ -206,3 +206,15 @@ def test_reference_file_matches_the_study_results():
         pytest.skip("results/morphometry/reference_cnn_medskel.json not present")
     assert ref["groups"]["N"]["n"] == 50
     assert np.median(ref["groups"]["N"]["values"]["vessel_density"]) == pytest.approx(0.1226, abs=5e-4)
+
+
+def test_group_chart_and_explanations():
+    from medskel_ai import report_card as rc
+
+    values = {m: [float(i) for i in range(1, 101)] for m in mm.ALL_MEASURES}
+    reference = {"groups": {g: {"name": g, "n": 100, "values": values} for g in "NADG"}}
+    fig = rc.group_chart({m: 30.0 for m in mm.ALL_MEASURES}, reference)
+    assert len(fig.axes) == len(rc.SHOWN)
+    assert "this eye" in fig.axes[0].get_title(loc="left")
+    text = rc.explanations_markdown()
+    assert all(name in text for _, name, *_ in rc.SHOWN) and "not a diagnosis" in text

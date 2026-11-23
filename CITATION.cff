@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite it as below."
+title: "MedSkel AI: retinal vessel segmentation with a U-Net and geometric vessel measurement"
+type: software
+authors:
+  - family-names: "El Boumshouli"
+    given-names: "Mouhssine"
+    affiliation: "EIDIA, Euromed University of Fes"
+repository-code: "https://github.com/MouhssineElBoumshouli/medskel-ai"
+date-released: "2026-11-23"
+keywords:
+  - retinal vessel segmentation
+  - U-Net
+  - fundus imaging
+  - skeletonization
+  - PyTorch

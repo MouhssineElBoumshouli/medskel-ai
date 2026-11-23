@@ -1,0 +1,256 @@
+% ---------------------------------------------------------------------------
+% The code, file by file. Included by medskel_guide.tex.
+% ---------------------------------------------------------------------------
+\section{The code, file by file}
+
+This section walks through the code on GitHub. You don't need to remember every line. You need to know \textbf{what each file does, why it is written that way, and how to run it}. Every snippet below is copied from the real files (sometimes shortened with ``\dots'').
+
+\subsection{The map}
+All the code is Python. The CNN part uses PyTorch. Everything lives in the folder \texttt{src/medskel\_ai/}, plus the app at the top level.
+
+\begin{center}
+\small
+\begin{tabular}{>{\ttfamily}p{3.3cm} p{6.6cm} r}
+\toprule
+\textrm{\textbf{File}} & \textbf{Its one job} & \textbf{Lines} \\
+\midrule
+data.py & find photo/mask pairs, split them, cut 512-pixel crops & 329 \\
+model.py & the U-Net itself & 156 \\
+train.py & the loss and the training loop & 270 \\
+predict.py & segment a whole photo (tiles + stitching, flips) & 153 \\
+evaluate.py & Dice and the other scores, threshold choice, test & 266 \\
+topology.py & clDice and thin-vessel recall & 90 \\
+chase.py & the external test on CHASE\_DB1 & 177 \\
+morphometry.py & centre lines and the 6 measurements & 269 \\
+study.py & the measurement study (statistics) & 585 \\
+report\_card.py & the measurement table and chart of the app & 181 \\
+app.py & the app you open with \texttt{MedSkel AI.bat} & 228 \\
+tests/ & 55 automatic checks & 600 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The path of one photo through the code}
+\begin{center}
+\begin{tikzpicture}[node distance=0.3cm, every node/.style={font=\scriptsize}]
+  \tikzstyle{f}=[rectangle,rounded corners=2pt,draw=teal,fill=soft,minimum height=0.9cm,align=center,text width=2.3cm,inner sep=2pt]
+  \node[f] (a) {\texttt{data.py}\\read + pair};
+  \node[f,right=of a] (b) {\texttt{model.py}\\U-Net};
+  \node[f,right=of b] (c) {\texttt{predict.py}\\tiles $\to$ mask};
+  \node[f,right=of c] (d) {\texttt{morphometry.py}\\centre lines};
+  \node[f,right=of d] (e) {\texttt{report\_card.py}\\table + chart};
+  \foreach \x/\y in {a/b,b/c,c/d,d/e} \draw[-{Stealth},thick,teal] (\x) -- (\y);
+  \node[f,below=0.6cm of b] (t) {\texttt{train.py}\\learns weights};
+  \node[f,below=0.6cm of c] (v) {\texttt{evaluate.py}\\scores};
+  \draw[-{Stealth},thick,warn] (t) -- (b);
+  \draw[-{Stealth},thick,warn] (c) -- (v);
+\end{tikzpicture}
+\end{center}
+In words: \texttt{data.py} reads the files, \texttt{train.py} teaches the U-Net of \texttt{model.py}, \texttt{predict.py} uses the trained U-Net on a whole photo, \texttt{evaluate.py} scores the result, \texttt{morphometry.py} turns the mask into numbers, and the app shows everything.
+
+\begin{remember}
+Each file can be run on its own with \texttt{python -m medskel\_ai.<name>}. For example \texttt{python -m medskel\_ai.model} builds the U-Net and prints its parameter count. In Windows PowerShell, put \texttt{.\textbackslash.venv\textbackslash Scripts\textbackslash} in front of \texttt{python}.
+\end{remember}
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{data.py}: getting the data right}
+
+\textbf{\texttt{list\_pairs(root, split)}} lists every photo and its expert mask. A pair is accepted only if the two files have \emph{exactly the same name}. If one file has no partner, the code stops with an error. Training on a wrong mask would fail silently, which is worse than a crash.
+
+\textbf{\texttt{make\_split(pairs, val\_fraction=0.15, seed=42)}} makes the validation set out of the \emph{training} photos only:
+\begin{itemize}
+  \item \textbf{stratified}: 15\% of each group (A, D, G, N);
+  \item \textbf{deterministic}: seed 42 always gives the same split;
+  \item \textbf{duplicates stay together}: it computes a fingerprint of each file (SHA-256). Identical photos have the same fingerprint and always go to the same side;
+  \item the two empty masks (447\_G, 448\_G) are left out.
+\end{itemize}
+
+\textbf{\texttt{load\_mask}} turns the white/black mask into exactly 0 and 1. \textbf{\texttt{resize\_mask\_nearest}} resizes a mask with \emph{nearest neighbour}, because blending 0 and 1 would make values like 0.3 that are not labels.
+
+\textbf{\texttt{FivesCrops}} is the PyTorch \emph{Dataset}: the object that hands crops to the training loop. One item = all crops of one photo:
+\begin{itemize}
+  \item training: 2 random $512\times512$ crops per photo, at full resolution, with random flips, rotations and a small brightness change;
+  \item validation: 4 \emph{fixed} crops around the centre, so the score of two epochs can be compared fairly.
+\end{itemize}
+
+\begin{example}[: the image and the mask must move together]
+\begin{verbatim}
+def _augment_geometry(image, mask):
+    if torch.rand(1).item() < 0.5:
+        image, mask = image[:, ::-1], mask[:, ::-1]   # left-right flip
+    ...
+    k = int(torch.randint(0, 4, (1,)).item())       # 0, 90, 180 or 270 degrees
+    return np.rot90(image, k), np.rot90(mask, k)
+\end{verbatim}
+Both arrays get the same flip and the same rotation. If only the photo were flipped, the labels would point at the wrong pixels. Brightness, on the other hand, is changed on the photo only: lighting doesn't change where the vessels are.
+\end{example}
+
+\textbf{Tensor shapes} used everywhere: image \texttt{[3, H, W]} with values 0 to 1 in R, G, B order; mask \texttt{[1, H, W]} with values 0 or 1.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{model.py}: the U-Net}
+
+\textbf{\texttt{DoubleConv}} is one block: (3$\times$3 convolution $\to$ batch norm $\to$ ReLU) twice. \texttt{padding=1} keeps the height and width the same. The convolution has no bias (\texttt{bias=False}) because batch norm already adds one.
+
+\textbf{\texttt{UNet}} stacks the blocks. Here is the whole forward pass, the heart of the project:
+\begin{small}\begin{verbatim}
+def forward(self, x):
+    e1 = self.enc1(x)                    # [B,  32, 512, 512]
+    e2 = self.enc2(self.pool(e1))        # [B,  64, 256, 256]
+    e3 = self.enc3(self.pool(e2))        # [B, 128, 128, 128]
+    e4 = self.enc4(self.pool(e3))        # [B, 256,  64,  64]
+    b  = self.bottleneck(self.pool(e4))  # [B, 512,  32,  32]
+    d4 = self.dec4(self._up_and_concat(b, e4))
+    d3 = self.dec3(self._up_and_concat(d4, e3))
+    d2 = self.dec2(self._up_and_concat(d3, e2))
+    d1 = self.dec1(self._up_and_concat(d2, e1))
+    return self.head(d1)                 # [B, 1, 512, 512] logits
+\end{verbatim}
+\end{small}
+Read it like the U: four steps down (\texttt{enc} + \texttt{pool}), the bottleneck, four steps up (\texttt{dec}). \textbf{\texttt{\_up\_and\_concat}} enlarges the small map (bilinear) and glues the encoder map of the same size next to it with \texttt{torch.cat}: that's the skip connection. That is why \texttt{dec4} receives $512+256=768$ channels. The \textbf{head} is a $1\times1$ convolution that turns 32 channels into 1 logit per pixel.
+
+\begin{remember}
+The model outputs \textbf{logits}, not probabilities. There is no sigmoid inside the model. The loss applies it in a numerically safe way, and prediction applies \texttt{torch.sigmoid} itself.
+\end{remember}
+
+\textbf{\texttt{PretrainedUNet}} is the comparison model (ResNet34 encoder trained on ImageNet). It comes from a library, is not the model we explain, and only answers ``how far are we from a strong standard model?''. \textbf{\texttt{count\_parameters}} adds up every trainable number: 7{,}849{,}601.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{train.py}: how the weights are learned}
+
+\textbf{The loss.} \texttt{bce\_dice\_loss} = BCE (from PyTorch, \texttt{binary\_cross\_entropy\_with\_logits}) + \texttt{soft\_dice\_loss}:
+\begin{small}\begin{verbatim}
+def soft_dice_loss(logits, target, eps=1.0):
+    p = torch.sigmoid(logits)
+    intersection = (p * target).sum()
+    return 1 - (2 * intersection + eps) / (p.sum() + target.sum() + eps)
+\end{verbatim}
+\end{small}
+``Soft'' means it uses probabilities, not 0/1 decisions. A hard decision has no slope, so backpropagation couldn't use it. \texttt{eps} avoids dividing by zero.
+
+\textbf{One training step} is these lines, in this order:
+\begin{small}\begin{verbatim}
+optimizer.zero_grad(set_to_none=True)   # forget last step's gradients
+with torch.autocast(...):
+    logits = model(images)              # 1. forward pass
+loss = bce_dice_loss(logits.float(), masks)   # 2. loss
+scaler.scale(loss).backward()           # 3. backpropagation
+scaler.step(optimizer)                  # 4. Adam update
+scaler.update()
+\end{verbatim}
+\end{small}
+\begin{itemize}
+  \item \textbf{Batch}: 2 photos $\times$ 2 crops = 4 crops of $512\times512$ per step (what fits in 4\,GB).
+  \item \textbf{Learning rate}: \texttt{lr = 0.001 * 0.5 * (1 + cos(pi * progress))}, where \texttt{progress} goes from 0 to 1 over the time budget. Big steps first, tiny steps at the end.
+  \item \textbf{Mixed precision} (\texttt{autocast} + \texttt{GradScaler}): 16-bit numbers where safe, to save memory and time. The loss stays in 32-bit.
+  \item \textbf{Time budget}, not a fixed number of epochs: \texttt{--minutes 150}.
+\end{itemize}
+
+After each epoch, \texttt{validate} computes the Dice on the fixed validation crops. The code saves \texttt{best.pt} (best weights so far) and \texttt{last.pt} (everything needed to continue with \texttt{--resume}), plus \texttt{history.csv} and \texttt{curves.png}. The file also contains \texttt{soft\_cldice\_loss}, the clDice loss of experiment E3 (\texttt{--cldice-weight}); it didn't help and is off by default.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{predict.py}: segmenting a whole photo}
+
+A $2048\times2048$ photo doesn't fit in the GPU at once. \textbf{\texttt{\_predict\_tiled}} cuts it into $512\times512$ tiles that overlap by 64 pixels, predicts each tile, then adds the probabilities into a big sum map and counts how many tiles covered each pixel (\texttt{hits}). The result is \texttt{prob\_sum / hits}: an average where tiles overlap, which hides the seams.
+
+With \texttt{flips=True}, \textbf{\texttt{predict\_probability}} does this 4 times (normal, mirrored left-right, up-down, both), mirrors each answer back, and averages the 4 maps.
+
+\textbf{\texttt{load\_model}} loads \texttt{best.pt} and the threshold from \texttt{threshold\_flips.json} (0.30), the one chosen on validation. \texttt{model.eval()} tells batch norm to use its stored averages instead of batch statistics. \textbf{\texttt{make\_overlay}} paints vessel pixels green on the photo.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{evaluate.py}: scores and the test rule}
+
+\textbf{\texttt{confusion\_counts}} counts TP, FP, FN, TN. \textbf{\texttt{metrics\_from\_counts}} turns them into Dice, IoU, precision, recall, specificity and accuracy (the formulas of section \ref{sec:metrics-anchor}).
+
+\textbf{Choosing the threshold} (\texttt{--split val}): it tries 0.10, 0.15, \dots, 0.90 on the 88 validation photos and keeps the one with the best mean Dice. It writes it to \texttt{threshold.json}.
+
+\textbf{The test rule is written into the code}, so it can't be broken by accident:
+\begin{small}\begin{verbatim}
+if list(run_dir.glob("test*_metrics.json")):
+    raise SystemExit("... One test evaluation per model. Refusing to run again.")
+if not threshold_file.exists():
+    raise SystemExit("Run '--split val' first ...")
+\end{verbatim}
+\end{small}
+
+\textbf{\texttt{bootstrap\_ci}} makes the 95\% confidence intervals: draw 200 photos \emph{with replacement} from the 200 test photos, compute the mean, repeat 10{,}000 times, keep the middle 95\%. With \texttt{clusters}, whole groups (both eyes of one child) are drawn together. The test step also saves 6 example figures picked by a fixed rule (worst, 20th, 40th, 60th, 80th percentile, best), not by taste.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{topology.py}: what Dice can't see}
+\textbf{\texttt{skeleton}} gives the 1-pixel centre lines (scikit-image). \textbf{\texttt{topology\_metrics}} computes clDice from two shares: how much of the predicted skeleton is inside the expert mask, and how much of the expert skeleton is inside the prediction. \textbf{\texttt{thin\_vessel\_mask}} finds the thin expert vessels: the distance transform gives $d$ at each skeleton pixel, the width is about $2d-1$, and a vessel is ``thin'' if that is at most 3 (in practice 1 to 4 pixels wide). Thin-vessel recall = the share of those pixels that the model found.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{chase.py}: the external test}
+Three decisions were written down \emph{before} looking at CHASE results:
+\begin{enumerate}
+  \item \textbf{Scale}: FIVES shows about $2009/50 \approx 40$ pixels per degree of retina; CHASE about $1000/30 \approx 33$. \texttt{predict\_at\_scale} enlarges the CHASE photo to match (factor $\approx1.31$), predicts, then shrinks the \emph{probabilities} back.
+  \item \textbf{Field of view}: \texttt{field\_of\_view} finds the bright retina disc, and only pixels inside it are counted.
+  \item \textbf{Children, not images}: the confidence intervals resample the 14 children.
+\end{enumerate}
+Nothing is trained or tuned here: model and threshold come from FIVES.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{morphometry.py}: from mask to numbers}
+\textbf{\texttt{import\_upstream}} loads the original \texttt{medskel} code from a separate folder next to this project (\texttt{../medskel}, commit \texttt{1a838a8}), read-only. Nothing is copied. If the folder is missing, you get a clear message saying how to get it.
+
+\textbf{\texttt{skeleton\_of(mask, method)}}: \texttt{"thinning"} or \texttt{"medskel"} (polygon with $\varepsilon = 4$\,px, then Voronoi). Both are measured by the same function (\texttt{vessel\_summary} from the original project), so a difference between them comes from the method, not from the measuring code.
+
+\begin{itemize}
+  \item \textbf{\texttt{vessel\_density}}: vessel pixels / pixels of the field of view.
+  \item \textbf{\texttt{fractal\_dimension}}: cover the image with boxes of side 2, 4, 8, \dots, count the boxes that touch a vessel, and fit a straight line to $\log N(s)$ against $\log(1/s)$. The slope is the dimension (a line gives 1, a filled square gives 2; the tests check exactly this).
+  \item \textbf{\texttt{medskel\_median\_calibre}}: the width fix. The original code kept radii only at a few corners of each branch, so a 12-pixel vessel measured 1.3 pixels. Here the width is $2\times$ the distance to the border, sampled every pixel along each branch, then the median.
+  \item \textbf{\texttt{measure\_medskel}}: what the app calls; it returns the numbers \emph{and} the skeleton, so the app can draw the red lines with \texttt{draw\_centre\_lines}.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{study.py}: the measurement study}
+Run with \texttt{python -m medskel\_ai.study all}. Three steps, each can be stopped and restarted (finished work is skipped):
+\begin{enumerate}
+  \item \texttt{predict}: CNN masks for the FIVES test photos and CHASE (GPU).
+  \item \texttt{measure}: all measurements of every mask with both methods (CPU, several processes in parallel), into \texttt{measurements.csv}.
+  \item \texttt{analyze}: the statistics, into \texttt{results/morphometry/}.
+\end{enumerate}
+The statistics: \texttt{agreement\_study} (relative differences, paired Wilcoxon test), \texttt{group\_table} (Kruskal--Wallis across the 4 groups, then Mann--Whitney of each disease against healthy, corrected with \texttt{holm} because we test several times), \texttt{classifier\_study} (logistic regression on the 6 measurements, trained on training photos, scored once on the test photos, plus 500 runs with shuffled labels to measure chance). \texttt{build\_reference} writes the 50 healthy reference eyes used by the app. PyTorch is imported only inside the steps that need it, so the statistics run without a GPU.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{app.py} and \texttt{report\_card.py}: the app}
+The app (built with \textbf{Gradio}, a library that turns Python functions into a web page) has two functions behind its buttons:
+\begin{itemize}
+  \item \textbf{\texttt{segment}}: resizes the photo to the training scale (2048 px), runs \texttt{predict\_probability}, applies the threshold, and resizes the mask back with nearest neighbour. It returns the slider images and a small \emph{state} (the working image and mask) for the next step.
+  \item \textbf{\texttt{measure}}: takes that state, runs \texttt{measure\_medskel}, draws the centre lines, and asks \texttt{report\_card.py} for the table (\texttt{markdown\_table}), the CSV file (\texttt{csv\_text}) and the chart (\texttt{group\_chart}). If you changed the settings, the table says the comparison is less fair.
+\end{itemize}
+\texttt{MedSkel AI.bat} only does two things: it sets \texttt{MEDSKEL\_OPEN\_BROWSER=1} and runs \texttt{.venv\textbackslash Scripts\textbackslash python.exe app.py}.
+
+% ---------------------------------------------------------------------------
+\subsection{\texttt{tests/}: 55 automatic checks}
+Run \texttt{python -m pytest}. The tests use small \emph{synthetic} images (made-up squares and lines), so they need no FIVES data and finish in seconds. Some examples of what they check, by name:
+\begin{itemize}
+  \item \nolinkurl{test_missing_mask_is_an_error}, \nolinkurl{test_split_is_deterministic_and_never_contains_test}, \nolinkurl{test_identical_photos_stay_in_the_same_part}
+  \item \nolinkurl{test_augmented_image_and_mask_stay_aligned}, \nolinkurl{test_nearest_resize_keeps_labels_binary}
+  \item \nolinkurl{test_parameter_count_of_the_real_model} (7{,}849{,}601), \nolinkurl{test_overfit_one_batch} (the network can learn one example perfectly: proof that the learning loop works)
+  \item \nolinkurl{test_all_background_prediction_has_high_accuracy_but_zero_dice}
+  \item \nolinkurl{test_dice_hides_a_lost_thin_vessel_but_cldice_and_thin_recall_show_it}
+  \item \nolinkurl{test_fractal_dimension_of_a_line_is_1_and_of_a_square_is_2}, \nolinkurl{test_original_medskel_width_is_biased_so_we_recompute_it}
+\end{itemize}
+Eight measurement tests need the \texttt{medskel} folder next to the project; without it they are \emph{skipped}, not failed.
+
+% ---------------------------------------------------------------------------
+\subsection{The rules the code follows}
+\begin{itemize}
+  \item \textbf{No data in Git}: photos, masks and trained weights stay on your computer (\texttt{C:\textbackslash data\textbackslash FIVES}, \texttt{runs/}). GitHub only has code and small number files.
+  \item \textbf{Same seed everywhere} (42), so a rerun gives the same split and the same crops.
+  \item \textbf{Calculations apart from files}: most functions only compute (\texttt{metrics\_from\_counts}, \texttt{fractal\_dimension}, \texttt{table\_rows}\dots) and can be tested with made-up arrays. Reading files and printing happen in the \texttt{main()} functions at the bottom of each file.
+  \item \textbf{Mistakes stop the program}: wrong pairs, a second test run, or a missing threshold all raise a clear error instead of continuing quietly.
+\end{itemize}
+
+\begin{prof}\textbf{Q: Show me where backpropagation happens in your code.}\\
+In \texttt{train.py}, the line \texttt{scaler.scale(loss).backward()}. PyTorch records every operation of the forward pass, and \texttt{backward()} applies the chain rule through them to get the gradient of the loss for all 7.8 million weights. Then \texttt{scaler.step(optimizer)} lets Adam change the weights.\end{prof}
+
+\begin{prof}\textbf{Q: Where is the skip connection in the code?}\\
+In \texttt{model.py}, \texttt{\_up\_and\_concat}: \texttt{torch.cat([x, skip], dim=1)} glues the encoder map next to the upsampled map, along the channel axis.\end{prof}
+
+\begin{prof}\textbf{Q: How do you make sure you didn't tune on the test set?}\\
+The threshold is chosen in \texttt{evaluate.py --split val}. The test command refuses to run without that threshold file, and refuses to run a second time once a test result exists.\end{prof}
+
+\begin{prof}\textbf{Q: How do you know your code is correct?}\\
+55 automatic tests on synthetic examples with known answers (a straight tube of known width, a line of dimension 1, a one-batch overfit), and the measurement setup reproduces the original MedSkel numbers exactly (9.3\% and 3.2\%).\end{prof}

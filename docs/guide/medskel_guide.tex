@@ -20,6 +20,7 @@
 \usepackage{titlesec}
 \usepackage{fancyhdr}
 \usepackage[hidelinks]{hyperref}
+\def\UrlBreaks{\do\_\do\/}
 \usepackage{parskip}
 
 \definecolor{teal}{HTML}{0F8B8D}
@@ -382,7 +383,7 @@ We also used \textbf{mixed precision}: some computations use shorter numbers, wh
 \end{itemize}
 
 % ---------------------------------------------------------------------------
-\section{How we know if it is good}
+\section{How we know if it is good}\label{sec:metrics-anchor}
 
 \subsection{Counting right and wrong pixels}
 Compare the AI's mask with the expert's mask, pixel by pixel. There are four cases:
@@ -573,6 +574,8 @@ Double-click \texttt{MedSkel AI.bat} in the \texttt{medskel-ai} folder (or its d
 
 \subsection{How to present one eye in class}
 ``The AI found the vessels in a few seconds. MedSkel drew their centre lines. This eye has a vessel density of 9.9\%, lower than most healthy eyes, and on the chart the red dot sits inside the disease bars. But the bars overlap, so this is a clue for research, not a diagnosis.''
+
+\input{code_chapter}
 
 % ---------------------------------------------------------------------------
 \section{The limits, in one place}
